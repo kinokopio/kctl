@@ -1,4 +1,4 @@
-package commands
+package sa
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"kctl/pkg/types"
 )
 
-// ScanCmd scan 命令
+// ScanCmd scan 子命令
 type ScanCmd struct{}
 
 func init() {
@@ -34,11 +34,11 @@ func (c *ScanCmd) Aliases() []string {
 }
 
 func (c *ScanCmd) Description() string {
-	return "扫描所有 SA 权限"
+	return "扫描所有 Pod 的 SA Token 权限"
 }
 
 func (c *ScanCmd) Usage() string {
-	return `scan [options]
+	return `sa scan [options]
 
 扫描所有 Pod 中的 ServiceAccount Token 权限
 
@@ -48,9 +48,9 @@ func (c *ScanCmd) Usage() string {
   --token, -t     显示 Token
 
 示例：
-  scan              扫描所有 SA
-  scan --risky      只显示有风险的 SA
-  scan --perms      显示完整权限`
+  sa scan              扫描所有 SA
+  sa scan --risky      只显示有风险的 SA
+  sa scan --perms      显示完整权限`
 }
 
 // SATokenResult 扫描结果
@@ -88,7 +88,7 @@ func (c *ScanCmd) Execute(sess *session.Session, args []string) error {
 		}
 	}
 
-	// 检查连接
+	// 检查连接（懒加载）
 	kubelet, err := sess.GetKubeletClient()
 	if err != nil {
 		return err

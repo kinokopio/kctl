@@ -1,4 +1,4 @@
-package commands
+package sa
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"kctl/pkg/types"
 )
 
-// InfoCmd info 命令
+// InfoCmd info 子命令
 type InfoCmd struct{}
 
 func init() {
@@ -31,13 +31,11 @@ func (c *InfoCmd) Description() string {
 }
 
 func (c *InfoCmd) Usage() string {
-	return `info
+	return `sa info
 
 显示当前 ServiceAccount 的详细信息
 
-进入控制台时会自动设置当前 SA，也可以使用 'use' 命令切换
-
-运行 'scan' 后可以获取更详细的权限信息`
+使用 'sa use <namespace/name>' 选择 SA 后，可以查看详情`
 }
 
 func (c *InfoCmd) Execute(sess *session.Session, args []string) error {
@@ -45,7 +43,7 @@ func (c *InfoCmd) Execute(sess *session.Session, args []string) error {
 
 	sa := sess.GetCurrentSA()
 	if sa == nil {
-		return fmt.Errorf("未选择 ServiceAccount，请先使用 'use <namespace/name>' 选择")
+		return fmt.Errorf("未选择 ServiceAccount，请先使用 'sa use <namespace/name>' 选择")
 	}
 
 	p.Println()
@@ -86,7 +84,7 @@ func (c *InfoCmd) Execute(sess *session.Session, args []string) error {
 	} else if sa.Permissions != "" && sa.Permissions != "[]" {
 		c.printPermissions(p, sa.Permissions)
 	} else {
-		p.Printf("    %s\n", p.Colored(config.ColorGray, "(not scanned - run 'scan' to check permissions)"))
+		p.Printf("    %s\n", p.Colored(config.ColorGray, "(not scanned - run 'sa scan' to check permissions)"))
 	}
 
 	p.Println()

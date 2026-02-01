@@ -1,4 +1,4 @@
-package commands
+package sa
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 	"kctl/pkg/types"
 )
 
-// UseCmd use 命令
+// UseCmd use 子命令
 type UseCmd struct{}
 
 func init() {
@@ -26,11 +26,11 @@ func (c *UseCmd) Aliases() []string {
 }
 
 func (c *UseCmd) Description() string {
-	return "选择 ServiceAccount"
+	return "选择 ServiceAccount 作为当前身份"
 }
 
 func (c *UseCmd) Usage() string {
-	return `use <namespace/name>
+	return `sa use <namespace/name>
 
 选择一个 ServiceAccount 作为当前操作目标
 
@@ -39,8 +39,8 @@ func (c *UseCmd) Usage() string {
   - exec 命令会默认使用该 SA 关联的 Pod
 
 示例：
-  use kube-system/cluster-admin
-  use default/nginx`
+  sa use kube-system/cluster-admin
+  sa use default/nginx`
 }
 
 func (c *UseCmd) Execute(sess *session.Session, args []string) error {
@@ -115,7 +115,7 @@ func (c *UseCmd) listAvailableSAs(sess *session.Session) error {
 	}
 
 	if len(sas) == 0 {
-		return fmt.Errorf("没有可用的 ServiceAccount，请先执行 'scan'")
+		return fmt.Errorf("没有可用的 ServiceAccount，请先执行 'sa scan'")
 	}
 
 	p.Printf("  %s\n\n", p.Colored(config.ColorYellow, "可用的 ServiceAccount:"))
@@ -136,7 +136,7 @@ func (c *UseCmd) listAvailableSAs(sess *session.Session) error {
 	}
 
 	p.Println()
-	p.Printf("  用法: %s\n\n", p.Colored(config.ColorCyan, "use <namespace/sa-name>"))
+	p.Printf("  用法: %s\n\n", p.Colored(config.ColorCyan, "sa use <namespace/sa-name>"))
 
 	return nil
 }
