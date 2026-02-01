@@ -24,34 +24,41 @@ func (c *ConnectCmd) Aliases() []string {
 }
 
 func (c *ConnectCmd) Description() string {
-	return "连接到 Kubelet"
+	return "连接到 Kubelet（可选，命令会自动连接）"
 }
 
 func (c *ConnectCmd) Usage() string {
-	return `connect
+	return `connect [ip]
 
-使用当前配置连接到 Kubelet
+显式连接到 Kubelet 并验证
 
-在连接前，请确保已设置：
-  - target (Kubelet IP)
-  - token 或 token-file
+注意：此命令是可选的，其他命令（如 pods, sa scan）会自动连接。
+使用此命令可以提前验证连接是否正常。
+
+参数：
+  ip    可选，Kubelet IP 地址（会自动设置 target）
 
 示例：
-  # 使用当前配置连接
-  connect
-
-  # 先设置目标再连接
-  set target 10.0.0.1
-  connect`
+  connect                 使用当前配置连接
+  connect 10.0.0.1        连接到指定 IP
+  set target 10.0.0.1 && connect`
 }
 
 func (c *ConnectCmd) Execute(sess *session.Session, args []string) error {
 	p := sess.Printer
 	ctx := context.Background()
 
+	// 如果提供了 IP 参数，自动设置 target
+	if len(args) > 0 {
+		sess.Config.KubeletIP = args[0]
+		p.Printf("%s Target set to %s\n",
+			p.Colored(config.ColorBlue, "[*]"),
+			args[0])
+	}
+
 	// 检查配置
 	if sess.Config.KubeletIP == "" {
-		return fmt.Errorf("未设置 Kubelet IP，请使用 'set target <ip>' 设置")
+		return fmt.Errorf("未设置 Kubelet IP，请使用 'set target <ip>' 设置或 'connect <ip>'")
 	}
 
 	if sess.Config.Token == "" {
@@ -63,18 +70,13 @@ func (c *ConnectCmd) Execute(sess *session.Session, args []string) error {
 		sess.Config.KubeletIP,
 		sess.Config.KubeletPort)
 
-	// 连接
-	if err := sess.Connect(); err != nil {
+	// 使用懒加载的 GetKubeletClient（会自动连接）
+	kubelet, err := sess.GetKubeletClient()
+	if err != nil {
 		return fmt.Errorf("连接失败: %w", err)
 	}
 
 	// 验证连接
-	kubelet, err := sess.GetKubeletClient()
-	if err != nil {
-		return err
-	}
-
-	// 尝试获取节点信息
 	result, err := kubelet.ValidatePort(ctx)
 	if err != nil {
 		p.Warning("连接成功，但无法验证 Kubelet 端口")
