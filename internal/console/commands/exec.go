@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync"
 
 	"kctl/config"
 	"kctl/internal/session"
@@ -45,17 +47,24 @@ exec -it [pod]                    进入交互式 shell
 在 Pod 中执行命令
 
 选项：
-  -n <namespace>    指定命名空间
-  -c <container>    指定容器
-  -it               交互式 shell（自动探测可用 shell）
-  --shell <shell>   指定 shell 路径（默认自动探测）
+  -n <namespace>      指定命名空间
+  -c <container>      指定容器
+  -it                 交互式 shell（自动探测可用 shell）
+  --shell <shell>     指定 shell 路径（默认自动探测）
+  --all-pods          在所有 Pod 中执行命令
+  --filter <pods>     排除指定 Pod（逗号分隔）
+  --filter-ns <ns>    排除指定命名空间（逗号分隔）
+  --concurrency <n>   并发数（默认: 10）
 
 示例：
-  exec -- whoami                    执行单条命令
-  exec nginx -- cat /etc/passwd     在指定 Pod 中执行
-  exec -it                          进入当前 SA Pod 的交互式 shell
-  exec -it nginx                    进入指定 Pod 的交互式 shell
-  exec -it --shell /bin/bash nginx  使用指定 shell`
+  exec -- whoami                              执行单条命令
+  exec nginx -- cat /etc/passwd               在指定 Pod 中执行
+  exec -it                                    进入当前 SA Pod 的交互式 shell
+  exec -it nginx                              进入指定 Pod 的交互式 shell
+  exec --all-pods -- whoami                   在所有 Pod 中执行
+  exec --all-pods -n kube-system -- id        在指定命名空间的所有 Pod 中执行
+  exec --all-pods --filter kube-proxy -- id   排除指定 Pod
+  exec --all-pods --filter-ns kube-system,kubernetes-dashboard -- id  排除命名空间`
 }
 
 func (c *ExecCmd) Execute(sess *session.Session, args []string) error {
@@ -74,6 +83,10 @@ func (c *ExecCmd) Execute(sess *session.Session, args []string) error {
 	podName := ""
 	interactive := false
 	shellPath := ""
+	allPods := false
+	filterPods := ""
+	filterNs := ""
+	concurrency := 10
 	var command []string
 
 	// 查找 -- 分隔符
@@ -108,6 +121,25 @@ func (c *ExecCmd) Execute(sess *session.Session, args []string) error {
 				shellPath = args[i+1]
 				i++
 			}
+		case "--all-pods":
+			allPods = true
+		case "--filter":
+			if i+1 < len(args) {
+				filterPods = args[i+1]
+				i++
+			}
+		case "--filter-ns":
+			if i+1 < len(args) {
+				filterNs = args[i+1]
+				i++
+			}
+		case "--concurrency":
+			if i+1 < len(args) {
+				if n, err := strconv.Atoi(args[i+1]); err == nil && n > 0 {
+					concurrency = n
+				}
+				i++
+			}
 		case "--":
 			// 跳过
 		default:
@@ -120,6 +152,17 @@ func (c *ExecCmd) Execute(sess *session.Session, args []string) error {
 	// 获取命令
 	if cmdStart != -1 && cmdStart < len(args) {
 		command = args[cmdStart:]
+	}
+
+	// 多 Pod 执行模式
+	if allPods {
+		if interactive {
+			return fmt.Errorf("--all-pods 不支持交互式模式")
+		}
+		if len(command) == 0 {
+			return fmt.Errorf("--all-pods 模式必须指定命令")
+		}
+		return c.execAllPods(ctx, sess, kubelet, namespace, filterPods, filterNs, concurrency, command)
 	}
 
 	// 如果是交互模式但没有指定命令，需要探测 shell
@@ -342,4 +385,184 @@ func (c *ExecCmd) startShell(ctx context.Context, kubelet interface {
 	}
 
 	return kubelet.ExecInteractive(ctx, opts)
+}
+
+// execAllPods 在多个 Pod 中并发执行命令
+func (c *ExecCmd) execAllPods(ctx context.Context, sess *session.Session, kubelet interface {
+	Exec(ctx context.Context, opts *types.ExecOptions) (*types.ExecResult, error)
+}, namespace, filterPods, filterNs string, concurrency int, command []string) error {
+	p := sess.Printer
+
+	// 获取缓存的 Pod
+	pods := sess.GetCachedPods()
+	if len(pods) == 0 {
+		return fmt.Errorf("没有缓存的 Pod，请先执行 'pods' 命令")
+	}
+
+	// 解析 filter 列表
+	podFilterList := parseFilterList(filterPods)
+	nsFilterList := parseFilterList(filterNs)
+
+	// 过滤 Pod
+	var targetPods []types.PodContainerInfo
+	for _, pod := range pods {
+		// 按命名空间过滤（-n 参数，只保留指定命名空间）
+		if namespace != "" && pod.Namespace != namespace {
+			continue
+		}
+		// 按 --filter-ns 排除命名空间
+		if matchFilterList(pod.Namespace, nsFilterList) {
+			continue
+		}
+		// 按 --filter 排除 Pod 名称
+		if matchFilterList(pod.PodName, podFilterList) {
+			continue
+		}
+		// 只选择 Running 状态
+		if pod.Status != "Running" {
+			continue
+		}
+		targetPods = append(targetPods, pod)
+	}
+
+	if len(targetPods) == 0 {
+		return fmt.Errorf("没有匹配的 Pod")
+	}
+
+	p.Printf("%s Executing on %d pods (concurrency: %d)...\n\n",
+		p.Colored(config.ColorBlue, "[*]"),
+		len(targetPods), concurrency)
+
+	// 执行结果
+	type execResultItem struct {
+		Namespace string
+		Pod       string
+		Container string
+		Stdout    string
+		Error     string
+		Success   bool
+	}
+
+	var results []execResultItem
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, concurrency)
+
+	for _, pod := range targetPods {
+		wg.Add(1)
+		semaphore <- struct{}{}
+
+		go func(pod types.PodContainerInfo) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			container := ""
+			if len(pod.Containers) > 0 {
+				container = pod.Containers[0].Name
+			}
+
+			opts := &types.ExecOptions{
+				Namespace: pod.Namespace,
+				Pod:       pod.PodName,
+				Container: container,
+				Command:   command,
+				Stdin:     false,
+				Stdout:    true,
+				Stderr:    true,
+				TTY:       false,
+			}
+
+			result, err := kubelet.Exec(ctx, opts)
+
+			item := execResultItem{
+				Namespace: pod.Namespace,
+				Pod:       pod.PodName,
+				Container: container,
+				Success:   true,
+			}
+
+			if err != nil {
+				item.Success = false
+				item.Error = err.Error()
+			} else if result.Error != "" {
+				item.Success = false
+				item.Error = result.Error
+			} else {
+				item.Stdout = result.Stdout
+			}
+
+			mu.Lock()
+			results = append(results, item)
+			mu.Unlock()
+		}(pod)
+	}
+
+	wg.Wait()
+
+	// 统计结果
+	successCount := 0
+	failCount := 0
+	for _, r := range results {
+		if r.Success {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+
+	// 打印结果
+	for _, r := range results {
+		if r.Success {
+			p.Printf("%s %s/%s\n",
+				p.Colored(config.ColorGreen, "[+]"),
+				r.Namespace, r.Pod)
+			if r.Stdout != "" {
+				// 缩进输出
+				lines := strings.Split(strings.TrimRight(r.Stdout, "\n"), "\n")
+				for _, line := range lines {
+					p.Printf("    %s\n", line)
+				}
+			}
+		} else {
+			p.Printf("%s %s/%s\n",
+				p.Colored(config.ColorRed, "[-]"),
+				r.Namespace, r.Pod)
+			p.Printf("    %s\n", p.Colored(config.ColorRed, r.Error))
+		}
+		p.Println()
+	}
+
+	// 打印统计
+	p.Printf("%s Completed: %s, %s\n",
+		p.Colored(config.ColorBlue, "[*]"),
+		p.Colored(config.ColorGreen, fmt.Sprintf("%d success", successCount)),
+		p.Colored(config.ColorRed, fmt.Sprintf("%d failed", failCount)))
+
+	return nil
+}
+
+// parseFilterList 解析逗号分隔的 filter 列表
+func parseFilterList(filter string) []string {
+	if filter == "" {
+		return nil
+	}
+	parts := strings.Split(filter, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// matchFilterList 检查字符串是否匹配任一 filter
+func matchFilterList(s string, filters []string) bool {
+	for _, f := range filters {
+		if s == f || strings.Contains(s, f) {
+			return true
+		}
+	}
+	return false
 }

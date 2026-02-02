@@ -146,6 +146,8 @@ func (c *Console) completer(d prompt.Document) []prompt.Suggest {
 		return c.getPodsFlagSuggestions(word)
 	case "scan":
 		return c.getScanFlagSuggestions(word)
+	case "discover", "disc":
+		return c.getDiscoverSuggestions(args, word)
 	}
 
 	return nil
@@ -229,6 +231,15 @@ func (c *Console) getExecSuggestions(args []string, word string) []prompt.Sugges
 		case "-c":
 			// 补全容器名
 			return c.getContainerSuggestions(args, word)
+		case "--filter":
+			// 补全要排除的 Pod
+			return c.getFilterPodSuggestions(word)
+		case "--filter-ns":
+			// 补全要排除的命名空间
+			return c.getNamespaceSuggestions(word)
+		case "--concurrency":
+			// 补全并发数
+			return c.getConcurrencySuggestions(word)
 		}
 	}
 
@@ -240,6 +251,10 @@ func (c *Console) getExecSuggestions(args []string, word string) []prompt.Sugges
 		prompt.Suggest{Text: "--shell", Description: "指定 shell 路径"},
 		prompt.Suggest{Text: "-n", Description: "指定命名空间"},
 		prompt.Suggest{Text: "-c", Description: "指定容器"},
+		prompt.Suggest{Text: "--all-pods", Description: "在所有 Pod 中执行"},
+		prompt.Suggest{Text: "--filter", Description: "排除指定 Pod（逗号分隔）"},
+		prompt.Suggest{Text: "--filter-ns", Description: "排除指定命名空间（逗号分隔）"},
+		prompt.Suggest{Text: "--concurrency", Description: "并发数（默认: 10）"},
 		prompt.Suggest{Text: "--", Description: "命令分隔符"},
 	)
 
@@ -328,6 +343,21 @@ func (c *Console) getContainerSuggestions(args []string, word string) []prompt.S
 	return prompt.FilterHasPrefix(suggestions, word, true)
 }
 
+// getFilterPodSuggestions 获取 filter 的 Pod 补全
+func (c *Console) getFilterPodSuggestions(word string) []prompt.Suggest {
+	var suggestions []prompt.Suggest
+	pods := c.session.GetCachedPods()
+	for _, pod := range pods {
+		if pod.Status == "Running" {
+			suggestions = append(suggestions, prompt.Suggest{
+				Text:        pod.PodName,
+				Description: fmt.Sprintf("排除 %s", pod.Namespace),
+			})
+		}
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
 // getSetSuggestions 获取 set 命令建议
 func (c *Console) getSetSuggestions(word string) []prompt.Suggest {
 	suggestions := []prompt.Suggest{
@@ -392,6 +422,71 @@ func (c *Console) getScanFlagSuggestions(word string) []prompt.Suggest {
 		{Text: "--risky", Description: "只显示有风险的 SA"},
 		{Text: "--perms", Description: "显示权限"},
 		{Text: "--token", Description: "显示 Token"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getDiscoverSuggestions 获取 discover 命令的选项补全
+func (c *Console) getDiscoverSuggestions(args []string, word string) []prompt.Suggest {
+	// 检查上一个参数，决定补全什么
+	if len(args) >= 2 {
+		lastArg := args[len(args)-1]
+		// 如果当前正在输入（word 不为空），检查倒数第二个参数
+		if word != "" && len(args) >= 2 {
+			lastArg = args[len(args)-2]
+		}
+
+		switch lastArg {
+		case "-p", "--port":
+			// 补全端口
+			return c.getPortSuggestions(word)
+		case "-c", "--concurrency":
+			// 补全并发数
+			return c.getConcurrencySuggestions(word)
+		case "-t", "--timeout":
+			// 补全超时
+			return c.getTimeoutSuggestions(word)
+		}
+	}
+
+	suggestions := []prompt.Suggest{
+		{Text: "-p", Description: "端口 (默认: 10250)"},
+		{Text: "--port", Description: "端口 (默认: 10250)"},
+		{Text: "-c", Description: "并发数 (默认: 100)"},
+		{Text: "--concurrency", Description: "并发数 (默认: 100)"},
+		{Text: "-t", Description: "超时秒数 (默认: 3)"},
+		{Text: "--timeout", Description: "超时秒数 (默认: 3)"},
+		{Text: "--all", Description: "显示所有开放端口"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPortSuggestions 获取端口补全
+func (c *Console) getPortSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "10250", Description: "Kubelet API (默认)"},
+		{Text: "10255", Description: "Kubelet 只读端口"},
+		{Text: "10250,10255", Description: "常用 Kubelet 端口"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getConcurrencySuggestions 获取并发数补全
+func (c *Console) getConcurrencySuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "50", Description: "低并发"},
+		{Text: "100", Description: "默认"},
+		{Text: "200", Description: "高并发"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getTimeoutSuggestions 获取超时补全
+func (c *Console) getTimeoutSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "1", Description: "1 秒"},
+		{Text: "3", Description: "3 秒 (默认)"},
+		{Text: "5", Description: "5 秒"},
 	}
 	return prompt.FilterHasPrefix(suggestions, word, true)
 }
