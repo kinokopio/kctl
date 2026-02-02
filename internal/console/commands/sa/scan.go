@@ -260,7 +260,9 @@ func (c *ScanCmd) saveResults(sess *session.Session, results []SATokenResult) in
 
 func (c *ScanCmd) mergeExistingRecord(existing *types.ServiceAccountRecord, result SATokenResult) {
 	var pods []types.SAPodInfo
-	json.Unmarshal([]byte(existing.Pods), &pods)
+	if err := json.Unmarshal([]byte(existing.Pods), &pods); err != nil {
+		pods = []types.SAPodInfo{}
+	}
 	pods = append(pods, types.SAPodInfo{
 		Name:      result.PodName,
 		Namespace: result.Namespace,
@@ -270,7 +272,9 @@ func (c *ScanCmd) mergeExistingRecord(existing *types.ServiceAccountRecord, resu
 	existing.Pods = string(podsJSON)
 
 	var existingFlags types.SASecurityFlags
-	json.Unmarshal([]byte(existing.SecurityFlags), &existingFlags)
+	if err := json.Unmarshal([]byte(existing.SecurityFlags), &existingFlags); err != nil {
+		existingFlags = types.SASecurityFlags{}
+	}
 	existingFlags.Privileged = existingFlags.Privileged || result.SecurityFlags.Privileged
 	existingFlags.AllowPrivilegeEscalation = existingFlags.AllowPrivilegeEscalation || result.SecurityFlags.AllowPrivilegeEscalation
 	existingFlags.HasHostPath = existingFlags.HasHostPath || result.SecurityFlags.HasHostPath

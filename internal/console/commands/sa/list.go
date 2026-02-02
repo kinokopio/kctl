@@ -66,8 +66,12 @@ func (c *ListCmd) Execute(sess *session.Session, args []string) error {
 
 		var secFlags types.SASecurityFlags
 		var perms []types.SAPermission
-		json.Unmarshal([]byte(sa.SecurityFlags), &secFlags)
-		json.Unmarshal([]byte(sa.Permissions), &perms)
+		if err := json.Unmarshal([]byte(sa.SecurityFlags), &secFlags); err != nil {
+			secFlags = types.SASecurityFlags{}
+		}
+		if err := json.Unmarshal([]byte(sa.Permissions), &perms); err != nil {
+			perms = []types.SAPermission{}
+		}
 
 		rows = append(rows, output.SARow{
 			Risk:        formatRiskLabel(p, config.RiskLevel(sa.RiskLevel), sa.IsClusterAdmin),
