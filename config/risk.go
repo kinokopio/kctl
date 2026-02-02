@@ -172,16 +172,16 @@ var PermissionRiskRules = []PermissionRiskRule{
 
 // CriticalPermissions 高危权限定义
 var CriticalPermissions = map[string][]string{
-	"*":                   {"*"},                                                  // 所有资源所有操作
-	"secrets":             {"get", "list", "watch", "create", "*"},                // secrets 读写
-	"pods":                {"create", "*"},                                        // 创建 Pod
-	"pods/exec":           {"create", "*"},                                        // Pod exec
-	"clusterroles":        {"create", "update", "patch", "bind", "escalate", "*"}, // RBAC 修改
+	"*":                   {"*"},
+	"secrets":             {"get", "list", "watch", "create", "*"},
+	"pods":                {"create", "*"},
+	"pods/exec":           {"create", "get", "*"},
+	"pods/attach":         {"create", "get", "*"},
+	"clusterroles":        {"create", "update", "patch", "bind", "escalate", "*"},
 	"clusterrolebindings": {"create", "update", "patch", "*"},
 	"roles":               {"create", "update", "patch", "bind", "escalate", "*"},
 	"rolebindings":        {"create", "update", "patch", "*"},
 	"serviceaccounts":     {"create", "impersonate", "*"},
-	"nodes":               {"proxy", "*"},
 	"nodes/proxy":         {"create", "get", "*"},
 }
 
