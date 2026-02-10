@@ -30,6 +30,10 @@ func (c *SetCmd) Description() string {
 	return "设置配置项"
 }
 
+func (c *SetCmd) Mode() CommandMode {
+	return ModeAll
+}
+
 func (c *SetCmd) Usage() string {
 	return `set <key> <value>
 

@@ -23,6 +23,10 @@ func (c *ClearCmd) Description() string {
 	return "清除缓存"
 }
 
+func (c *ClearCmd) Mode() CommandMode {
+	return ModeAll
+}
+
 func (c *ClearCmd) Usage() string {
 	return `clear
 

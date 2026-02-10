@@ -158,16 +158,31 @@ func (c *Console) completer(d prompt.Document) []prompt.Suggest {
 		return c.getPortForwardSuggestions(args, word)
 	case "pid2pod", "p2p":
 		return c.getPid2PodSuggestions(word)
+	case "golden", "gt":
+		return c.getGoldenSuggestions(args, word)
 	}
 
 	return nil
 }
 
-// getCommandSuggestions 获取命令建议
+// getCommandSuggestions 获取命令建议（根据当前模式过滤）
 func (c *Console) getCommandSuggestions(prefix string) []prompt.Suggest {
-	suggestions := []prompt.Suggest{
+	mode := c.session.GetMode()
+	var suggestions []prompt.Suggest
+
+	// 通用命令
+	commonCmds := []prompt.Suggest{
 		{Text: "help", Description: "显示帮助信息"},
 		{Text: "mode", Description: "查看或切换运行模式"},
+		{Text: "set", Description: "设置配置"},
+		{Text: "show", Description: "显示信息"},
+		{Text: "export", Description: "导出结果"},
+		{Text: "clear", Description: "清除缓存"},
+		{Text: "exit", Description: "退出控制台"},
+	}
+
+	// Kubelet 模式命令
+	kubeletCmds := []prompt.Suggest{
 		{Text: "connect", Description: "连接到 Kubelet"},
 		{Text: "discover", Description: "扫描网络发现 Kubelet"},
 		{Text: "sa", Description: "ServiceAccount 操作"},
@@ -176,12 +191,23 @@ func (c *Console) getCommandSuggestions(prefix string) []prompt.Suggest {
 		{Text: "run", Description: "执行命令 (/run API)"},
 		{Text: "portforward", Description: "端口转发"},
 		{Text: "pid2pod", Description: "将 PID 映射到 Pod"},
-		{Text: "set", Description: "设置配置"},
-		{Text: "show", Description: "显示信息"},
-		{Text: "export", Description: "导出结果"},
-		{Text: "clear", Description: "清除缓存"},
-		{Text: "exit", Description: "退出控制台"},
 	}
+
+	// Kubernetes 模式命令
+	kubernetesCmds := []prompt.Suggest{
+		{Text: "golden", Description: "Golden Ticket 伪造"},
+	}
+
+	// 添加通用命令
+	suggestions = append(suggestions, commonCmds...)
+
+	// 根据模式添加特定命令
+	if mode == session.ModeKubelet {
+		suggestions = append(suggestions, kubeletCmds...)
+	} else {
+		suggestions = append(suggestions, kubernetesCmds...)
+	}
+
 	return prompt.FilterHasPrefix(suggestions, prefix, true)
 }
 
@@ -608,6 +634,138 @@ func (c *Console) getPid2PodSuggestions(word string) []prompt.Suggest {
 	suggestions := []prompt.Suggest{
 		{Text: "--pid", Description: "只查看指定 PID"},
 		{Text: "--all", Description: "显示所有进程（包括非容器进程）"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenSuggestions 获取 golden 命令的补全
+func (c *Console) getGoldenSuggestions(args []string, word string) []prompt.Suggest {
+	// 子命令补全
+	if len(args) == 1 || (len(args) == 2 && word != "" && !strings.HasPrefix(word, "-")) {
+		suggestions := []prompt.Suggest{
+			{Text: "user-cert", Description: "伪造用户证书"},
+			{Text: "node-cert", Description: "伪造节点证书"},
+			{Text: "sa-token", Description: "伪造 SA Token"},
+			{Text: "update-uid", Description: "更新 UID 缓存到内存"},
+			{Text: "uid-list", Description: "列出 UID 缓存"},
+			{Text: "test", Description: "测试密钥文件"},
+		}
+		return prompt.FilterHasPrefix(suggestions, word, true)
+	}
+
+	// 根据子命令提供不同的参数补全
+	if len(args) >= 2 {
+		subCmd := args[1]
+		switch subCmd {
+		case "user-cert":
+			return c.getGoldenUserCertSuggestions(word)
+		case "node-cert":
+			return c.getGoldenNodeCertSuggestions(word)
+		case "sa-token":
+			return c.getGoldenSATokenSuggestions(word)
+		case "update-uid":
+			return c.getGoldenUpdateUIDSuggestions(word)
+		case "uid-list", "uidlist", "uids":
+			return c.getGoldenUIDListSuggestions(word)
+		case "test":
+			return c.getGoldenTestSuggestions(word)
+		}
+	}
+
+	// 通用参数补全
+	suggestions := []prompt.Suggest{
+		{Text: "--ca-cert", Description: "CA 证书路径"},
+		{Text: "--ca-key", Description: "CA 私钥路径"},
+		{Text: "--sa-key", Description: "SA 私钥路径"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--output", Description: "输出目录"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenUserCertSuggestions 获取 golden user-cert 命令的补全
+func (c *Console) getGoldenUserCertSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--ca-cert", Description: "CA 证书路径（必需）"},
+		{Text: "--ca-key", Description: "CA 私钥路径（必需）"},
+		{Text: "--role", Description: "集群角色（默认: cluster-admins）"},
+		{Text: "--user", Description: "用户名（默认: golden-admin）"},
+		{Text: "--days", Description: "证书有效天数（默认: 365）"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--output", Description: "输出目录"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+		{Text: "--no-kubeconfig", Description: "不生成 kubeconfig"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenNodeCertSuggestions 获取 golden node-cert 命令的补全
+func (c *Console) getGoldenNodeCertSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--ca-cert", Description: "CA 证书路径（必需）"},
+		{Text: "--ca-key", Description: "CA 私钥路径（必需）"},
+		{Text: "--node", Description: "节点名称（必需）"},
+		{Text: "--days", Description: "证书有效天数（默认: 365）"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--output", Description: "输出目录"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+		{Text: "--no-kubeconfig", Description: "不生成 kubeconfig"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenSATokenSuggestions 获取 golden sa-token 命令的补全
+func (c *Console) getGoldenSATokenSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--sa-key", Description: "SA 私钥路径（必需）"},
+		{Text: "--namespace", Description: "命名空间（必需）"},
+		{Text: "--name", Description: "SA 名称（必需）"},
+		{Text: "--uid", Description: "SA UID"},
+		{Text: "--uid-cache", Description: "UID 缓存文件"},
+		{Text: "--ttl", Description: "Token 有效期（默认: 8760h）"},
+		{Text: "--audience", Description: "Token 受众 URL"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--ca-cert", Description: "CA 证书路径（用于 kubeconfig）"},
+		{Text: "--output", Description: "输出目录"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+		{Text: "--no-kubeconfig", Description: "不生成 kubeconfig"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenUpdateUIDSuggestions 获取 golden update-uid 命令的补全
+func (c *Console) getGoldenUpdateUIDSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--ca-cert", Description: "CA 证书路径"},
+		{Text: "--ca-key", Description: "CA 私钥路径"},
+		{Text: "--token", Description: "认证 Token"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--output", Description: "同时保存到文件"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenUIDListSuggestions 获取 golden uid-list 命令的补全
+func (c *Console) getGoldenUIDListSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--file", Description: "从文件加载 UID 缓存"},
+		{Text: "--namespace", Description: "按命名空间过滤"},
+		{Text: "--name", Description: "按 SA 名称过滤"},
+		{Text: "--output", Description: "保存到文件"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenTestSuggestions 获取 golden test 命令的补全
+func (c *Console) getGoldenTestSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--ca-cert", Description: "CA 证书路径"},
+		{Text: "--ca-key", Description: "CA 私钥路径"},
+		{Text: "--sa-key", Description: "SA 私钥路径"},
+		{Text: "--uid-cache", Description: "UID 缓存文件"},
 	}
 	return prompt.FilterHasPrefix(suggestions, word, true)
 }

@@ -25,6 +25,10 @@ func (c *ModeCmd) Description() string {
 	return "查看或切换运行模式"
 }
 
+func (c *ModeCmd) Mode() CommandMode {
+	return ModeAll
+}
+
 func (c *ModeCmd) Usage() string {
 	return `mode [kubelet|kubernetes]
 

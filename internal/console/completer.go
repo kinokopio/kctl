@@ -53,6 +53,8 @@ func (c *Completer) Complete(d prompt.Document) []prompt.Suggest {
 		return c.getSASuggestions(args, word)
 	case "pods", "po":
 		return c.getPodsSuggestions(args, word)
+	case "golden", "gt":
+		return c.getGoldenSuggestions(args, word)
 	}
 
 	return nil
@@ -72,6 +74,7 @@ func (c *Completer) getCommandSuggestions(prefix string) []prompt.Suggest {
 		{Text: "set", Description: "设置配置"},
 		{Text: "show", Description: "显示信息"},
 		{Text: "export", Description: "导出结果"},
+		{Text: "golden", Description: "Golden Ticket 伪造"},
 		{Text: "clear", Description: "清除缓存"},
 		{Text: "exit", Description: "退出控制台"},
 	}
@@ -141,6 +144,43 @@ func (c *Completer) getPodsSuggestions(args []string, word string) []prompt.Sugg
 		{Text: "--running", Description: "只显示 Running 状态"},
 		{Text: "-n", Description: "按命名空间过滤"},
 		{Text: "--refresh", Description: "强制刷新"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getGoldenSuggestions 获取 golden 命令建议
+func (c *Completer) getGoldenSuggestions(args []string, word string) []prompt.Suggest {
+	// 子命令补全
+	if len(args) == 1 || (len(args) == 2 && word != "" && !strings.HasPrefix(word, "-")) {
+		suggestions := []prompt.Suggest{
+			{Text: "user-cert", Description: "伪造用户证书"},
+			{Text: "node-cert", Description: "伪造节点证书"},
+			{Text: "sa-token", Description: "伪造 SA Token"},
+			{Text: "update-uid", Description: "更新 UID 缓存"},
+			{Text: "test", Description: "测试密钥文件"},
+		}
+		return prompt.FilterHasPrefix(suggestions, word, true)
+	}
+
+	// 参数补全
+	suggestions := []prompt.Suggest{
+		{Text: "--ca-cert", Description: "CA 证书路径"},
+		{Text: "--ca-key", Description: "CA 私钥路径"},
+		{Text: "--sa-key", Description: "SA 私钥路径"},
+		{Text: "--namespace", Description: "命名空间"},
+		{Text: "--name", Description: "名称"},
+		{Text: "--uid", Description: "UID"},
+		{Text: "--uid-cache", Description: "UID 缓存文件"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--output", Description: "输出目录"},
+		{Text: "--force", Description: "覆盖已存在文件"},
+		{Text: "--no-kubeconfig", Description: "不生成 kubeconfig"},
+		{Text: "--role", Description: "集群角色"},
+		{Text: "--user", Description: "用户名"},
+		{Text: "--node", Description: "节点名称"},
+		{Text: "--ttl", Description: "Token 有效期"},
+		{Text: "--days", Description: "证书有效天数"},
+		{Text: "--audience", Description: "Token 受众 URL"},
 	}
 	return prompt.FilterHasPrefix(suggestions, word, true)
 }

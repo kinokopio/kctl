@@ -29,31 +29,49 @@ func PrintBanner(s *session.Session) {
 	p.Println()
 
 	// 打印版本和信息
-	p.Printf("  %s %s\n",
-		p.Colored(config.ColorWhite, "Kubelet Security Assessment Tool"),
-		p.Colored(config.ColorGray, Version))
+	p.Printf("  %s\n",
+		p.Colored(config.ColorWhite, "Kubernetes Security Audit Tool"))
 	p.Println()
 
 	// 打印运行模式
-	p.Printf("  %s Mode: %s\n",
+	mode := s.GetMode()
+	modeDisplay := "Local"
+	if s.InPod {
+		modeDisplay = "In-Pod"
+	}
+	p.Printf("  %s Mode: %s (%s)\n",
 		p.Colored(config.ColorBlue, "[*]"),
-		p.Colored(config.ColorGreen, s.GetModeString()))
+		p.Colored(config.ColorGreen, string(mode)),
+		p.Colored(config.ColorGray, modeDisplay))
 
-	// 打印目标信息
-	if s.Config.KubeletIP != "" {
-		targetInfo := fmt.Sprintf("%s:%d", s.Config.KubeletIP, s.Config.KubeletPort)
-		note := ""
-		if s.InPod {
-			note = " (auto-detected)"
+	// 根据模式打印目标信息
+	if mode == session.ModeKubelet {
+		if s.Config.KubeletIP != "" {
+			targetInfo := fmt.Sprintf("%s:%d", s.Config.KubeletIP, s.Config.KubeletPort)
+			note := ""
+			if s.InPod {
+				note = " (auto-detected)"
+			}
+			p.Printf("  %s Kubelet: %s%s\n",
+				p.Colored(config.ColorBlue, "[*]"),
+				p.Colored(config.ColorYellow, targetInfo),
+				p.Colored(config.ColorGray, note))
+		} else {
+			p.Printf("  %s Kubelet: %s\n",
+				p.Colored(config.ColorBlue, "[*]"),
+				p.Colored(config.ColorGray, "(not set, use 'set target <ip>')"))
 		}
-		p.Printf("  %s Target: %s%s\n",
-			p.Colored(config.ColorBlue, "[*]"),
-			p.Colored(config.ColorYellow, targetInfo),
-			p.Colored(config.ColorGray, note))
 	} else {
-		p.Printf("  %s Target: %s\n",
-			p.Colored(config.ColorBlue, "[*]"),
-			p.Colored(config.ColorGray, "(not set, use 'set target <ip>')"))
+		if s.Config.APIServer != "" {
+			targetInfo := fmt.Sprintf("%s:%d", s.Config.APIServer, s.Config.APIServerPort)
+			p.Printf("  %s API Server: %s\n",
+				p.Colored(config.ColorBlue, "[*]"),
+				p.Colored(config.ColorYellow, targetInfo))
+		} else {
+			p.Printf("  %s API Server: %s\n",
+				p.Colored(config.ColorBlue, "[*]"),
+				p.Colored(config.ColorGray, "(not set, use 'set api-server <ip>')"))
+		}
 	}
 
 	// 打印帮助提示

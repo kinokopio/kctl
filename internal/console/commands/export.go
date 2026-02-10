@@ -28,6 +28,10 @@ func (c *ExportCmd) Description() string {
 	return "导出结果"
 }
 
+func (c *ExportCmd) Mode() CommandMode {
+	return ModeAll
+}
+
 func (c *ExportCmd) Usage() string {
 	return `export <format>
 

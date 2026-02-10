@@ -26,6 +26,10 @@ func (c *ExitCmd) Description() string {
 	return "退出控制台"
 }
 
+func (c *ExitCmd) Mode() CommandMode {
+	return ModeAll
+}
+
 func (c *ExitCmd) Usage() string {
 	return `exit
 

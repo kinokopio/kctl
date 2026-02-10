@@ -34,6 +34,10 @@ func (c *DiscoverCmd) Description() string {
 	return "扫描网段发现 Kubelet 节点"
 }
 
+func (c *DiscoverCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *DiscoverCmd) Usage() string {
 	return `discover <target> [options]
 

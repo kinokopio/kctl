@@ -24,6 +24,10 @@ func (c *SACmd) Description() string {
 	return "ServiceAccount 相关操作"
 }
 
+func (c *SACmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *SACmd) Usage() string {
 	return sa.Usage()
 }

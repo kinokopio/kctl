@@ -28,6 +28,10 @@ func (c *ShowCmd) Description() string {
 	return "显示配置或状态信息"
 }
 
+func (c *ShowCmd) Mode() CommandMode {
+	return ModeAll
+}
+
 func (c *ShowCmd) Usage() string {
 	return `show <what>
 

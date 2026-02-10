@@ -68,6 +68,9 @@ type Session struct {
 	PodCache     []types.PodContainerInfo
 	KubeletCache []types.KubeletNode // 发现的 Kubelet 节点缓存
 
+	// Golden Ticket UID 缓存（内存）
+	UIDCache *types.UIDCache
+
 	// 状态
 	IsConnected  bool
 	IsScanned    bool
@@ -321,7 +324,7 @@ func (s *Session) GetModeTarget() string {
 		}
 	case ModeKubernetes:
 		if s.Config.APIServer != "" {
-			return s.Config.APIServer
+			return fmt.Sprintf("%s:%d", s.Config.APIServer, s.Config.APIServerPort)
 		}
 	}
 	return ""
@@ -340,11 +343,11 @@ func (s *Session) GetPromptDisplay() string {
 		switch s.Mode {
 		case ModeKubelet:
 			if s.Config.KubeletIP != "" {
-				target = s.Config.KubeletIP
+				target = fmt.Sprintf("%s:%d", s.Config.KubeletIP, s.Config.KubeletPort)
 			}
 		case ModeKubernetes:
 			if s.Config.APIServer != "" {
-				target = s.Config.APIServer
+				target = fmt.Sprintf("%s:%d", s.Config.APIServer, s.Config.APIServerPort)
 			}
 		}
 		if target != "" {

@@ -27,6 +27,10 @@ func (c *ConnectCmd) Description() string {
 	return "连接到 Kubelet（可选，命令会自动连接）"
 }
 
+func (c *ConnectCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *ConnectCmd) Usage() string {
 	return `connect [ip]
 

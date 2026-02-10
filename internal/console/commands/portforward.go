@@ -45,6 +45,10 @@ func (c *PortForwardCmd) Description() string {
 	return "端口转发"
 }
 
+func (c *PortForwardCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *PortForwardCmd) Usage() string {
 	return `portforward [options] <pod> <local_port>:<remote_port> [...]
 

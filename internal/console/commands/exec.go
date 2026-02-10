@@ -40,6 +40,10 @@ func (c *ExecCmd) Description() string {
 	return "执行命令"
 }
 
+func (c *ExecCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *ExecCmd) Usage() string {
 	return `exec [options] [pod] -- <command>
 exec -it [pod]                    进入交互式 shell

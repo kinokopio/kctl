@@ -49,10 +49,7 @@ var ConsoleCmd = &cobra.Command{
   kctl console -t 10.0.0.1 -p 10250 --token "eyJ..." --api-server 10.0.0.1 --api-port 6443
 
   # 使用 token 文件
-  kctl console -t 10.0.0.1 --token-file /path/to/token
-
-  # 在控制台中
-  kctl [kube-system/cluster-admin ADMIN]> exec -- whoami`,
+  kctl console -t 10.0.0.1 --token-file /path/to/token`,
 	Run: runConsole,
 }
 

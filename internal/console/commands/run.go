@@ -32,6 +32,10 @@ func (c *RunCmd) Description() string {
 	return "通过 /run API 执行命令"
 }
 
+func (c *RunCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *RunCmd) Usage() string {
 	return `run [options] [pod]
 

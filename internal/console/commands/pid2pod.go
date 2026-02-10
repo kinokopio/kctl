@@ -34,6 +34,10 @@ func (c *Pid2PodCmd) Description() string {
 	return "将 PID 映射到 Pod"
 }
 
+func (c *Pid2PodCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *Pid2PodCmd) Usage() string {
 	return `pid2pod [options]
 

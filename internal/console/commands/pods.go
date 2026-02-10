@@ -30,6 +30,10 @@ func (c *PodsCmd) Description() string {
 	return "列出 Pod"
 }
 
+func (c *PodsCmd) Mode() CommandMode {
+	return ModeKubeletOnly
+}
+
 func (c *PodsCmd) Usage() string {
 	return `pods [options]
 
