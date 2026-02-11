@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/c-bata/go-prompt"
@@ -12,18 +13,20 @@ import (
 	"kctl/config"
 	"kctl/internal/console/commands"
 	"kctl/internal/session"
+	"kctl/pkg/kubeconfig"
 	"kctl/pkg/token"
 )
 
 // Options 控制台启动选项
 type Options struct {
-	Target    string // Kubelet IP
-	Port      int    // Kubelet 端口
-	TokenFile string // Token 文件路径
-	Token     string // Token 字符串
-	Proxy     string // SOCKS5 代理
-	APIServer string // API Server 地址
-	APIPort   int    // API Server 端口
+	Target     string // Kubelet IP
+	Port       int    // Kubelet 端口
+	TokenFile  string // Token 文件路径
+	Token      string // Token 字符串
+	Proxy      string // SOCKS5 代理
+	APIServer  string // API Server 地址
+	APIPort    int    // API Server 端口
+	Kubeconfig string // kubeconfig 文件路径
 }
 
 // Console 交互式控制台
@@ -45,7 +48,50 @@ func NewWithOptions(opts Options) (*Console, error) {
 		return nil, fmt.Errorf("创建会话失败: %w", err)
 	}
 
-	// 应用命令行参数覆盖
+	// 处理 kubeconfig (优先级最高)
+	if opts.Kubeconfig != "" {
+		parsed, err := kubeconfig.Parse(opts.Kubeconfig)
+		if err != nil {
+			return nil, fmt.Errorf("解析 kubeconfig 失败: %w", err)
+		}
+
+		// 设置 API Server
+		if parsed.Server != "" {
+			sess.Config.APIServer = parsed.Server
+			// 解析端口
+			if strings.Contains(parsed.Server, ":") {
+				parts := strings.Split(parsed.Server, ":")
+				if len(parts) >= 3 {
+					portStr := parts[len(parts)-1]
+					if idx := strings.Index(portStr, "/"); idx != -1 {
+						portStr = portStr[:idx]
+					}
+					if port, err := strconv.Atoi(portStr); err == nil {
+						sess.Config.APIServerPort = port
+					}
+				}
+			}
+		}
+
+		// 设置认证信息
+		if parsed.HasToken() {
+			sess.Config.Token = parsed.Token
+		} else if parsed.HasClientCert() {
+			// 使用客户端证书认证
+			sess.Config.ClientCert = parsed.ClientCert
+			sess.Config.ClientKey = parsed.ClientKey
+			if len(parsed.CACert) > 0 {
+				sess.Config.CACert = parsed.CACert
+			}
+		} else {
+			return nil, fmt.Errorf("kubeconfig 中没有可用的认证信息")
+		}
+
+		// 自动切换到 kubernetes 模式
+		sess.Mode = session.ModeKubernetes
+	}
+
+	// 应用命令行参数覆盖 (kubeconfig 之后的参数可以覆盖)
 	if opts.Target != "" {
 		sess.Config.KubeletIP = opts.Target
 	}
@@ -160,6 +206,8 @@ func (c *Console) completer(d prompt.Document) []prompt.Suggest {
 		return c.getPid2PodSuggestions(word)
 	case "golden", "gt":
 		return c.getGoldenSuggestions(args, word)
+	case "persist", "ps":
+		return c.getPersistSuggestions(args, word)
 	}
 
 	return nil
@@ -196,6 +244,7 @@ func (c *Console) getCommandSuggestions(prefix string) []prompt.Suggest {
 	// Kubernetes 模式命令
 	kubernetesCmds := []prompt.Suggest{
 		{Text: "golden", Description: "Golden Ticket 伪造"},
+		{Text: "persist", Description: "持久化攻击工具"},
 	}
 
 	// 添加通用命令
@@ -403,6 +452,7 @@ func (c *Console) getSetSuggestions(word string) []prompt.Suggest {
 		{Text: "port", Description: "Kubelet 端口"},
 		{Text: "token", Description: "Token 字符串"},
 		{Text: "token-file", Description: "Token 文件路径"},
+		{Text: "kubeconfig", Description: "kubeconfig 文件路径"},
 		{Text: "api-server", Description: "API Server 地址"},
 		{Text: "api-port", Description: "API Server 端口"},
 		{Text: "proxy", Description: "SOCKS5 代理地址"},
@@ -809,6 +859,78 @@ func (c *Console) getPortForwardSuggestions(args []string, word string) []prompt
 		}
 	}
 
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPersistSuggestions 获取 persist 命令的补全
+func (c *Console) getPersistSuggestions(args []string, word string) []prompt.Suggest {
+	// 子命令补全
+	if len(args) == 1 || (len(args) == 2 && word != "" && !strings.HasPrefix(word, "-")) {
+		suggestions := []prompt.Suggest{
+			{Text: "probe-inject", Description: "通过探针注入实现持久化"},
+			{Text: "probe-list", Description: "列出所有带有 exec 探针的工作负载"},
+			{Text: "probe-restore", Description: "移除注入的探针"},
+		}
+		return prompt.FilterHasPrefix(suggestions, word, true)
+	}
+
+	// 根据子命令提供不同的参数补全
+	if len(args) >= 2 {
+		subCmd := args[1]
+		switch subCmd {
+		case "probe-inject", "pi", "inject":
+			return c.getPersistProbeInjectSuggestions(word)
+		case "probe-list", "pl", "list":
+			return c.getPersistProbeListSuggestions(word)
+		case "probe-restore", "pr", "restore":
+			return c.getPersistProbeRestoreSuggestions(word)
+		}
+	}
+
+	return nil
+}
+
+// getPersistProbeInjectSuggestions 获取 persist probe-inject 命令的补全
+func (c *Console) getPersistProbeInjectSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--namespace", Description: "目标命名空间"},
+		{Text: "-n", Description: "目标命名空间"},
+		{Text: "--type", Description: "工作负载类型 (daemonset/deployment)"},
+		{Text: "-t", Description: "工作负载类型 (daemonset/deployment)"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--token", Description: "认证 Token"},
+		{Text: "--dry-run", Description: "仅预览，不实际执行"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPersistProbeListSuggestions 获取 persist probe-list 命令的补全
+func (c *Console) getPersistProbeListSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--namespace", Description: "按命名空间过滤"},
+		{Text: "-n", Description: "按命名空间过滤"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--token", Description: "认证 Token"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPersistProbeRestoreSuggestions 获取 persist probe-restore 命令的补全
+func (c *Console) getPersistProbeRestoreSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--namespace", Description: "目标命名空间"},
+		{Text: "-n", Description: "目标命名空间"},
+		{Text: "--name", Description: "工作负载名称"},
+		{Text: "--type", Description: "工作负载类型 (daemonset/deployment)"},
+		{Text: "-t", Description: "工作负载类型 (daemonset/deployment)"},
+		{Text: "--probe", Description: "探针类型 (liveness/readiness/startup)"},
+		{Text: "-p", Description: "探针类型 (liveness/readiness/startup)"},
+		{Text: "--container", Description: "容器名称"},
+		{Text: "-c", Description: "容器名称"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--token", Description: "认证 Token"},
+		{Text: "--dry-run", Description: "仅预览，不实际执行"},
+	}
 	return prompt.FilterHasPrefix(suggestions, word, true)
 }
 

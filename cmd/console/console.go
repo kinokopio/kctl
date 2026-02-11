@@ -10,13 +10,14 @@ import (
 
 var (
 	// 命令行参数
-	target    string
-	port      int
-	tokenFile string
-	tokenStr  string
-	proxy     string
-	apiServer string
-	apiPort   int
+	target     string
+	port       int
+	tokenFile  string
+	tokenStr   string
+	proxy      string
+	apiServer  string
+	apiPort    int
+	kubeconfig string
 )
 
 // ConsoleCmd 是 console 子命令
@@ -49,7 +50,10 @@ var ConsoleCmd = &cobra.Command{
   kctl console -t 10.0.0.1 -p 10250 --token "eyJ..." --api-server 10.0.0.1 --api-port 6443
 
   # 使用 token 文件
-  kctl console -t 10.0.0.1 --token-file /path/to/token`,
+  kctl console -t 10.0.0.1 --token-file /path/to/token
+
+  # 使用 kubeconfig 文件
+  kctl console --kubeconfig ~/.kube/config`,
 	Run: runConsole,
 }
 
@@ -64,6 +68,7 @@ func init() {
 	ConsoleCmd.Flags().StringVar(&proxy, "proxy", "", "SOCKS5 代理地址")
 	ConsoleCmd.Flags().StringVar(&apiServer, "api-server", "", "API Server 地址")
 	ConsoleCmd.Flags().IntVar(&apiPort, "api-port", 443, "API Server 端口")
+	ConsoleCmd.Flags().StringVarP(&kubeconfig, "kubeconfig", "k", "", "kubeconfig 文件路径")
 }
 
 func runConsole(cmd *cobra.Command, args []string) {
@@ -72,13 +77,14 @@ func runConsole(cmd *cobra.Command, args []string) {
 
 	// 创建控制台，传入命令行参数
 	opts := console.Options{
-		Target:    target,
-		Port:      port,
-		TokenFile: tokenFile,
-		Token:     tokenStr,
-		Proxy:     proxy,
-		APIServer: apiServer,
-		APIPort:   apiPort,
+		Target:     target,
+		Port:       port,
+		TokenFile:  tokenFile,
+		Token:      tokenStr,
+		Proxy:      proxy,
+		APIServer:  apiServer,
+		APIPort:    apiPort,
+		Kubeconfig: kubeconfig,
 	}
 
 	c, err := console.NewWithOptions(opts)

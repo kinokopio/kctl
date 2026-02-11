@@ -8,7 +8,8 @@ import (
 	"kctl/pkg/types"
 )
 
-// kubeconfigCertTemplate 证书认证的 kubeconfig 模板
+// kubeconfigCertTemplate 证书认证的 kubeconfig 模板 (带 CA 证书)
+// nolint:unused // 保留用于未来支持安全模式
 const kubeconfigCertTemplate = `apiVersion: v1
 clusters:
 - cluster:
@@ -121,11 +122,10 @@ func GenerateKubeconfigFromCert(result *types.ForgeResult, caCertPath, serverURL
 	keyB64 := base64.StdEncoding.EncodeToString(keyData)
 
 	username := result.Identity
-	var content string
 
 	// 默认使用 insecure 模式，因为 client CA 和 server CA 可能不同
 	// 如果用户需要安全模式，可以手动编辑 kubeconfig 添加正确的 server CA
-	content = fmt.Sprintf(kubeconfigCertInsecureTemplate,
+	content := fmt.Sprintf(kubeconfigCertInsecureTemplate,
 		serverURL,
 		username,
 		username,

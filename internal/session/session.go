@@ -31,6 +31,11 @@ type SessionConfig struct {
 	Token     string
 	TokenFile string
 
+	// 客户端证书配置
+	ClientCert []byte // 客户端证书 (PEM)
+	ClientKey  []byte // 客户端私钥 (PEM)
+	CACert     []byte // CA 证书 (PEM)
+
 	// API Server 配置
 	APIServer     string
 	APIServerPort int
@@ -227,18 +232,33 @@ func (s *Session) GetK8sClient(tokenStr string) (k8sclient.Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 检查缓存
-	if client, ok := s.k8sClients[tokenStr]; ok {
-		return client, nil
+	// 生成缓存 key (token 或 "cert" 用于证书认证)
+	cacheKey := tokenStr
+	if cacheKey == "" && len(s.Config.ClientCert) > 0 {
+		cacheKey = "client-cert"
 	}
 
-	// 创建新客户端
-	cfg := s.clientConfig
-	if cfg == nil {
-		cfg = client.DefaultConfig()
-		if s.Config.ProxyURL != "" {
-			cfg = cfg.WithProxy(s.Config.ProxyURL)
+	// 检查缓存
+	if cacheKey != "" {
+		if client, ok := s.k8sClients[cacheKey]; ok {
+			return client, nil
 		}
+	}
+
+	// 创建新客户端配置
+	cfg := client.DefaultConfig()
+	if s.Config.ProxyURL != "" {
+		cfg = cfg.WithProxy(s.Config.ProxyURL)
+	}
+
+	// 配置客户端证书
+	if len(s.Config.ClientCert) > 0 && len(s.Config.ClientKey) > 0 {
+		cfg = cfg.WithClientCert(s.Config.ClientCert, s.Config.ClientKey)
+	}
+
+	// 配置 CA 证书
+	if len(s.Config.CACert) > 0 {
+		cfg = cfg.WithCACert(s.Config.CACert)
 	}
 
 	// 构建 API Server 地址
@@ -260,7 +280,9 @@ func (s *Session) GetK8sClient(tokenStr string) (k8sclient.Client, error) {
 	}
 
 	// 缓存
-	s.k8sClients[tokenStr] = k8s
+	if cacheKey != "" {
+		s.k8sClients[cacheKey] = k8s
+	}
 
 	return k8s, nil
 }
