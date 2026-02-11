@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/http"
@@ -26,6 +27,11 @@ type Config struct {
 	// TLS 设置
 	SkipTLSVerify bool
 	CACertPath    string
+	CACert        []byte // CA 证书 (PEM)
+
+	// 客户端证书认证
+	ClientCert []byte // 客户端证书 (PEM)
+	ClientKey  []byte // 客户端私钥 (PEM)
 
 	// 重试设置
 	MaxRetries    int
@@ -55,16 +61,55 @@ func (c *Config) WithTimeout(timeout time.Duration) *Config {
 	return c
 }
 
+// WithClientCert 设置客户端证书
+func (c *Config) WithClientCert(cert, key []byte) *Config {
+	c.ClientCert = cert
+	c.ClientKey = key
+	return c
+}
+
+// WithCACert 设置 CA 证书
+func (c *Config) WithCACert(caCert []byte) *Config {
+	c.CACert = caCert
+	return c
+}
+
+// HasClientCert 检查是否配置了客户端证书
+func (c *Config) HasClientCert() bool {
+	return len(c.ClientCert) > 0 && len(c.ClientKey) > 0
+}
+
 // NewHTTPClient 创建 HTTP 客户端
 func NewHTTPClient(cfg *Config) (*http.Client, error) {
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
 
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.SkipTLSVerify,
+	}
+
+	// 配置客户端证书
+	if cfg.HasClientCert() {
+		cert, err := tls.X509KeyPair(cfg.ClientCert, cfg.ClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("加载客户端证书失败: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	// 配置 CA 证书
+	if len(cfg.CACert) > 0 {
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(cfg.CACert) {
+			return nil, fmt.Errorf("解析 CA 证书失败")
+		}
+		tlsConfig.RootCAs = caCertPool
+		tlsConfig.InsecureSkipVerify = false
+	}
+
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: cfg.SkipTLSVerify,
-		},
+		TLSClientConfig: tlsConfig,
 	}
 
 	// 配置代理

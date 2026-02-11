@@ -18,6 +18,31 @@ type Client interface {
 	CheckPermission(ctx context.Context, req *PermissionRequest) (bool, error)
 	CheckPermissions(ctx context.Context, reqs []PermissionRequest) ([]types.PermissionCheck, error)
 	CheckCommonPermissions(ctx context.Context, namespace string) ([]types.PermissionCheck, error)
+
+	// DaemonSet 操作
+	ListDaemonSets(ctx context.Context, namespace string) ([]types.DaemonSetInfo, error)
+	GetDaemonSet(ctx context.Context, namespace, name string) (*types.DaemonSetInfo, error)
+	PatchDaemonSet(ctx context.Context, namespace, name string, patch []byte) error
+
+	// Deployment 操作
+	ListDeployments(ctx context.Context, namespace string) ([]types.DeploymentInfo, error)
+	GetDeployment(ctx context.Context, namespace, name string) (*types.DeploymentInfo, error)
+	PatchDeployment(ctx context.Context, namespace, name string, patch []byte) error
+
+	// 工作负载通用操作 (带完整探针信息)
+	ListWorkloadsWithProbes(ctx context.Context, namespace string) ([]types.WorkloadInfo, error)
+
+	// Pod 操作
+	ListPods(ctx context.Context, namespace string, labelSelector string) ([]PodInfo, error)
+	GetPod(ctx context.Context, namespace, name string) (*PodInfo, error)
+
+	// Exec 操作
+	ExecInPod(ctx context.Context, namespace, podName, container string, command []string) (*types.PodExecResult, error)
+
+	// 获取内部配置
+	GetAPIServer() string
+	GetToken() string
+	GetConfig() *client.Config
 }
 
 // PermissionRequest 权限检查请求
@@ -27,6 +52,16 @@ type PermissionRequest struct {
 	Namespace   string
 	Group       string
 	Subresource string
+}
+
+// PodInfo Pod 基本信息 (用于 K8s API 客户端)
+type PodInfo struct {
+	Name       string
+	Namespace  string
+	Status     string
+	PodIP      string
+	NodeName   string
+	Containers []string
 }
 
 // k8sClient K8s API 客户端实现
@@ -47,6 +82,11 @@ func NewClient(apiServer, token string, cfg *client.Config) (Client, error) {
 		apiServer = config.DefaultK8sAPIServer
 	}
 
+	// 如果没有 token 且没有客户端证书，返回错误
+	if token == "" && !cfg.HasClientCert() {
+		return nil, fmt.Errorf("需要提供 Token 或客户端证书进行认证")
+	}
+
 	httpClient, err := client.NewHTTPClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("创建 HTTP 客户端失败: %w", err)
@@ -58,6 +98,15 @@ func NewClient(apiServer, token string, cfg *client.Config) (Client, error) {
 		httpClient: httpClient,
 		config:     cfg,
 	}, nil
+}
+
+// setAuthHeader 设置认证头
+func (c *k8sClient) setAuthHeader(req *http.Request) {
+	// 如果有 token，使用 Bearer token 认证
+	// 如果没有 token 但有客户端证书，TLS 层会处理认证
+	if c.token != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+	}
 }
 
 // SelfSubjectAccessReviewRequest 请求结构
@@ -116,7 +165,7 @@ func (c *k8sClient) CheckPermission(ctx context.Context, req *PermissionRequest)
 		return false, fmt.Errorf("创建请求失败: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+	c.setAuthHeader(httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)

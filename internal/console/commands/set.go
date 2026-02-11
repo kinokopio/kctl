@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"kctl/config"
 	"kctl/internal/output"
 	"kctl/internal/session"
+	"kctl/pkg/kubeconfig"
 	"kctl/pkg/token"
 )
 
@@ -44,6 +46,7 @@ func (c *SetCmd) Usage() string {
   port, kubelet-port    Kubelet 端口 (默认: 10250)
   token                 Token 字符串
   token-file            Token 文件路径
+  kubeconfig            kubeconfig 文件路径
   api-server            API Server 地址
   api-port              API Server 端口 (默认: 443)
   proxy                 SOCKS5 代理地址
@@ -54,6 +57,7 @@ func (c *SetCmd) Usage() string {
   set port 10250
   set token eyJhbGciOiJSUzI1NiIs...
   set token-file /path/to/token
+  set kubeconfig ~/.kube/config
   set proxy socks5://127.0.0.1:1080`
 }
 
@@ -106,6 +110,66 @@ func (c *SetCmd) Execute(sess *session.Session, args []string) error {
 		// 自动重连并更新 SA（token 变了，SA 也变了）
 		reconnect(sess, p, true)
 
+	case "kubeconfig":
+		// 解析 kubeconfig 文件
+		parsed, err := kubeconfig.Parse(value)
+		if err != nil {
+			return fmt.Errorf("解析 kubeconfig 失败: %w", err)
+		}
+
+		// 检查认证方式
+		if !parsed.HasToken() && !parsed.HasClientCert() {
+			return fmt.Errorf("kubeconfig 中没有可用的认证信息 (需要 token 或客户端证书)")
+		}
+
+		// 设置 API Server
+		if parsed.Server != "" {
+			sess.Config.APIServer = parsed.Server
+			// 解析端口
+			if strings.Contains(parsed.Server, ":") {
+				parts := strings.Split(parsed.Server, ":")
+				if len(parts) >= 3 {
+					// https://host:port 格式
+					portStr := parts[len(parts)-1]
+					// 移除路径部分
+					if idx := strings.Index(portStr, "/"); idx != -1 {
+						portStr = portStr[:idx]
+					}
+					if port, err := strconv.Atoi(portStr); err == nil {
+						sess.Config.APIServerPort = port
+					}
+				}
+			}
+			p.Success(fmt.Sprintf("API Server set to: %s", parsed.Server))
+		}
+
+		// 设置 Token
+		if parsed.HasToken() {
+			sess.Config.Token = parsed.Token
+			display := parsed.Token
+			if len(display) > 20 {
+				display = display[:20] + "..."
+			}
+			p.Success(fmt.Sprintf("Token loaded: %s", display))
+		} else if parsed.HasClientCert() {
+			// 客户端证书认证暂不支持，提示用户
+			p.Warning("kubeconfig 使用客户端证书认证，当前版本暂不支持")
+			p.Info("请使用 Token 认证方式，或手动设置 token")
+			return nil
+		}
+
+		// 显示上下文信息
+		p.Printf("%s Context: %s\n", p.Colored(config.ColorBlue, "[*]"), parsed.ContextName)
+		if parsed.Namespace != "" {
+			p.Printf("%s Default namespace: %s\n", p.Colored(config.ColorBlue, "[*]"), parsed.Namespace)
+		}
+
+		// 自动切换到 kubernetes 模式
+		if sess.Mode != session.ModeKubernetes {
+			sess.Mode = session.ModeKubernetes
+			p.Success("Switched to kubernetes mode")
+		}
+
 	case "api-server":
 		sess.Config.APIServer = value
 		p.Success(fmt.Sprintf("API Server set to: %s", value))
@@ -144,6 +208,7 @@ func (c *SetCmd) Execute(sess *session.Session, args []string) error {
 		p.Printf("    %-16s %s\n", "port", "Kubelet 端口")
 		p.Printf("    %-16s %s\n", "token", "Token 字符串")
 		p.Printf("    %-16s %s\n", "token-file", "Token 文件路径")
+		p.Printf("    %-16s %s\n", "kubeconfig", "kubeconfig 文件路径")
 		p.Printf("    %-16s %s\n", "api-server", "API Server 地址")
 		p.Printf("    %-16s %s\n", "api-port", "API Server 端口")
 		p.Printf("    %-16s %s\n", "proxy", "SOCKS5 代理地址")
