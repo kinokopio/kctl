@@ -110,7 +110,7 @@ func (c *ProbeRestoreCmd) Execute(sess *session.Session, args []string) error {
 		}
 
 		idx := 0
-		fmt.Sscanf(selectedIdx, "%d", &idx)
+		_, _ = fmt.Sscanf(selectedIdx, "%d", &idx)
 		selected := workloads[idx]
 
 		opts.Name = selected.Name
@@ -345,7 +345,7 @@ func (c *ProbeRestoreCmd) getFirstContainerName(ctx context.Context, k8sClient i
 				return "", err
 			}
 			if len(ds.Containers) == 0 {
-				return "", fmt.Errorf("DaemonSet %s/%s 没有容器", namespace, name)
+				return "", fmt.Errorf("daemonset %s/%s 没有容器", namespace, name)
 			}
 			return ds.Containers[0].Name, nil
 		}
@@ -356,7 +356,7 @@ func (c *ProbeRestoreCmd) getFirstContainerName(ctx context.Context, k8sClient i
 				return "", err
 			}
 			if len(deploy.Containers) == 0 {
-				return "", fmt.Errorf("Deployment %s/%s 没有容器", namespace, name)
+				return "", fmt.Errorf("deployment %s/%s 没有容器", namespace, name)
 			}
 			return deploy.Containers[0].Name, nil
 		}

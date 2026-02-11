@@ -114,7 +114,7 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 		if c.config != nil && c.config.HasClientCert() {
 			cert, err := tls.X509KeyPair(c.config.ClientCert, c.config.ClientKey)
 			if err != nil {
-				conn.Close()
+				_ = conn.Close()
 				return "", "", -1, fmt.Errorf("加载客户端证书失败: %w", err)
 			}
 			tlsConfig.Certificates = []tls.Certificate{cert}
@@ -131,7 +131,7 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 
 		tlsConn := tls.Client(conn, tlsConfig)
 		if err := tlsConn.Handshake(); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return "", "", -1, fmt.Errorf("TLS 握手失败: %w", err)
 		}
 		conn = tlsConn
@@ -159,7 +159,7 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 	httpReqBuilder.WriteString("\r\n")
 
 	if _, err := conn.Write([]byte(httpReqBuilder.String())); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return "", "", -1, fmt.Errorf("发送请求失败: %w", err)
 	}
 
@@ -167,20 +167,20 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 	respBuf := make([]byte, 4096)
 	n, err := conn.Read(respBuf)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return "", "", -1, fmt.Errorf("读取响应失败: %w", err)
 	}
 
 	respStr := string(respBuf[:n])
 	if !strings.Contains(respStr, "101 Switching Protocols") {
-		conn.Close()
+		_ = conn.Close()
 		return "", "", -1, fmt.Errorf("升级协议失败: %s", respStr)
 	}
 
 	// 创建 SPDY 连接
 	spdyConn, err := spdystream.NewConnection(conn, false)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return "", "", -1, fmt.Errorf("创建 SPDY 连接失败: %w", err)
 	}
 	go spdyConn.Serve(spdystream.NoOpStreamHandler)
@@ -193,7 +193,7 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 		"streamType": []string{"stdout"},
 	}, nil, false)
 	if err != nil {
-		spdyConn.Close()
+		_ = spdyConn.Close()
 		return "", "", -1, fmt.Errorf("创建 stdout 流失败: %w", err)
 	}
 
@@ -202,7 +202,7 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 		"streamType": []string{"stderr"},
 	}, nil, false)
 	if err != nil {
-		spdyConn.Close()
+		_ = spdyConn.Close()
 		return "", "", -1, fmt.Errorf("创建 stderr 流失败: %w", err)
 	}
 
@@ -211,25 +211,25 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 		"streamType": []string{"error"},
 	}, nil, false)
 	if err != nil {
-		spdyConn.Close()
+		_ = spdyConn.Close()
 		return "", "", -1, fmt.Errorf("创建 error 流失败: %w", err)
 	}
 
 	// 读取输出
 	done := make(chan struct{})
 	go func() {
-		io.Copy(&stdoutBuf, stdoutStream)
+		_, _ = io.Copy(&stdoutBuf, stdoutStream)
 		done <- struct{}{}
 	}()
 	go func() {
-		io.Copy(&stderrBuf, stderrStream)
+		_, _ = io.Copy(&stderrBuf, stderrStream)
 		done <- struct{}{}
 	}()
 
 	// 读取错误/退出码
 	var errorBuf bytes.Buffer
 	go func() {
-		io.Copy(&errorBuf, errorStream)
+		_, _ = io.Copy(&errorBuf, errorStream)
 		done <- struct{}{}
 	}()
 
@@ -238,7 +238,7 @@ func (c *k8sClient) execViaSPDY(ctx context.Context, execURL string) (stdout, st
 		<-done
 	}
 
-	spdyConn.Close()
+	_ = spdyConn.Close()
 
 	// 解析退出码
 	exitCode = 0
