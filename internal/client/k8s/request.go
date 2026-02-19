@@ -92,3 +92,35 @@ func (c *k8sClient) doPatch(ctx context.Context, url string, patch []byte) error
 
 	return nil
 }
+
+// doPost 执行 POST 请求 (创建资源)
+func (c *k8sClient) doPost(ctx context.Context, url string, body []byte) error {
+	resp, err := c.doRequest(ctx, "POST", url, body, "application/json")
+	if err != nil {
+		return fmt.Errorf("请求 K8s API Server 失败: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("K8s API Server 返回错误状态: %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// doDelete 执行 DELETE 请求
+func (c *k8sClient) doDelete(ctx context.Context, url string) error {
+	resp, err := c.doRequest(ctx, "DELETE", url, nil, "")
+	if err != nil {
+		return fmt.Errorf("请求 K8s API Server 失败: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("K8s API Server 返回错误状态: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
