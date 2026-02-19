@@ -870,6 +870,9 @@ func (c *Console) getPersistSuggestions(args []string, word string) []prompt.Sug
 			{Text: "probe-inject", Description: "通过探针注入实现持久化"},
 			{Text: "probe-list", Description: "列出所有带有 exec 探针的工作负载"},
 			{Text: "probe-restore", Description: "移除注入的探针"},
+			{Text: "webhook-inject", Description: "通过恶意 Admission Webhook 实现持久化"},
+			{Text: "webhook-list", Description: "列出所有 Admission Webhook 配置"},
+			{Text: "webhook-restore", Description: "移除注入的恶意 Webhook"},
 		}
 		return prompt.FilterHasPrefix(suggestions, word, true)
 	}
@@ -884,6 +887,12 @@ func (c *Console) getPersistSuggestions(args []string, word string) []prompt.Sug
 			return c.getPersistProbeListSuggestions(word)
 		case "probe-restore", "pr", "restore":
 			return c.getPersistProbeRestoreSuggestions(word)
+		case "webhook-inject", "wi", "webhook":
+			return c.getPersistWebhookInjectSuggestions(word)
+		case "webhook-list", "wl", "webhooks":
+			return c.getPersistWebhookListSuggestions(word)
+		case "webhook-restore", "wr", "webhook-remove":
+			return c.getPersistWebhookRestoreSuggestions(word)
 		}
 	}
 
@@ -930,6 +939,50 @@ func (c *Console) getPersistProbeRestoreSuggestions(word string) []prompt.Sugges
 		{Text: "--server", Description: "API Server URL"},
 		{Text: "--token", Description: "认证 Token"},
 		{Text: "--dry-run", Description: "仅预览，不实际执行"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPersistWebhookInjectSuggestions 获取 persist webhook-inject 命令的补全
+func (c *Console) getPersistWebhookInjectSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--type", Description: "攻击类型 (secret-exfil/pod-backdoor)"},
+		{Text: "-t", Description: "攻击类型 (secret-exfil/pod-backdoor)"},
+		{Text: "--namespace", Description: "Webhook 服务部署命名空间"},
+		{Text: "-n", Description: "Webhook 服务部署命名空间"},
+		{Text: "--exfil-url", Description: "外泄目标 URL (secret-exfil 类型)"},
+		{Text: "--image", Description: "后门容器镜像 (pod-backdoor 类型)"},
+		{Text: "--command", Description: "后门容器命令，逗号分隔"},
+		{Text: "--target-ns", Description: "目标命名空间，逗号分隔"},
+		{Text: "--webhook-image", Description: "Webhook 服务镜像 (默认: ghcr.io/kctl/webhook)"},
+		{Text: "--external-url", Description: "使用外部 URL 作为 Webhook 端点"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--token", Description: "认证 Token"},
+		{Text: "--dry-run", Description: "仅预览，不实际执行"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPersistWebhookListSuggestions 获取 persist webhook-list 命令的补全
+func (c *Console) getPersistWebhookListSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--all", Description: "显示所有 Webhook"},
+		{Text: "-a", Description: "显示所有 Webhook"},
+		{Text: "--type", Description: "过滤类型 (mutating/validating/all)"},
+		{Text: "-t", Description: "过滤类型 (mutating/validating/all)"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--token", Description: "认证 Token"},
+	}
+	return prompt.FilterHasPrefix(suggestions, word, true)
+}
+
+// getPersistWebhookRestoreSuggestions 获取 persist webhook-restore 命令的补全
+func (c *Console) getPersistWebhookRestoreSuggestions(word string) []prompt.Suggest {
+	suggestions := []prompt.Suggest{
+		{Text: "--name", Description: "指定要移除的 Webhook 名称"},
+		{Text: "--all", Description: "移除所有 kctl 管理的 Webhook"},
+		{Text: "--server", Description: "API Server URL"},
+		{Text: "--token", Description: "认证 Token"},
 	}
 	return prompt.FilterHasPrefix(suggestions, word, true)
 }
