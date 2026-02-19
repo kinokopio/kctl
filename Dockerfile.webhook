@@ -1,0 +1,14 @@
+# Build stage
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /app
+COPY cmd/webhook/main.go .
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o webhook main.go
+
+# Final stage - minimal image
+FROM scratch
+
+COPY --from=builder /app/webhook /webhook
+
+ENTRYPOINT ["/webhook"]
