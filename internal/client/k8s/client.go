@@ -28,6 +28,8 @@ type Client interface {
 	ListDeployments(ctx context.Context, namespace string) ([]types.DeploymentInfo, error)
 	GetDeployment(ctx context.Context, namespace, name string) (*types.DeploymentInfo, error)
 	PatchDeployment(ctx context.Context, namespace, name string, patch []byte) error
+	CreateDeployment(ctx context.Context, namespace string, deployment []byte) error
+	DeleteDeployment(ctx context.Context, namespace, name string) error
 
 	// 工作负载通用操作 (带完整探针信息)
 	ListWorkloadsWithProbes(ctx context.Context, namespace string) ([]types.WorkloadInfo, error)
@@ -38,6 +40,29 @@ type Client interface {
 
 	// Exec 操作
 	ExecInPod(ctx context.Context, namespace, podName, container string, command []string) (*types.PodExecResult, error)
+
+	// Namespace 操作
+	ListNamespaces(ctx context.Context) ([]string, error)
+	CreateNamespace(ctx context.Context, name string, labels map[string]string) error
+	DeleteNamespace(ctx context.Context, name string) error
+
+	// Secret 操作
+	CreateSecret(ctx context.Context, namespace string, secret []byte) error
+	DeleteSecret(ctx context.Context, namespace, name string) error
+
+	// ConfigMap 操作
+	CreateConfigMap(ctx context.Context, namespace string, configMap []byte) error
+	DeleteConfigMap(ctx context.Context, namespace, name string) error
+
+	// Service 操作
+	CreateService(ctx context.Context, namespace string, service []byte) error
+	DeleteService(ctx context.Context, namespace, name string) error
+
+	// Webhook 操作
+	ListMutatingWebhooks(ctx context.Context) ([]types.WebhookInfo, error)
+	ListValidatingWebhooks(ctx context.Context) ([]types.WebhookInfo, error)
+	CreateMutatingWebhook(ctx context.Context, webhook []byte) error
+	DeleteMutatingWebhook(ctx context.Context, name string) error
 
 	// 获取内部配置
 	GetAPIServer() string
